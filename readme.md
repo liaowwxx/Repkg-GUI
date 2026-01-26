@@ -10,6 +10,9 @@
 ### 如果您的电脑有配制好的python环境，也可以克隆本项目，直接运行app.py(一般情况下macOS出场自带python)
 ```bash
 git clone https://github.com/your-username/repkg-webui.git
+```
+
+```bash
 cd repkg-webui
 ```
 
@@ -34,3 +37,9 @@ streamlit run app.py
 ## 关于 RePKG 内核说明
 
 由于 [RePKG](https://github.com/notscuffed/repkg) 原作者目前仅提供了适用于 Windows 平台的预编译版本，本项目内置的 macOS 版内核是基于其开源代码在 macOS 环境下重新编译生成的。
+
+
+##写在最后
+其实也不知道为什么会想做一个macOS版本（
+就当是练习一下GitHub使用
+还有很多可以优化的地方
