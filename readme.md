@@ -1,13 +1,13 @@
 # RePKG WebUI (for macOS)
 
-这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的图形化界面（WebUI），基于 Streamlit 构建。支持 macOS
+这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的图形化界面（WebUI），基于 Streamlit 构建。目前仅支持 macOS。
 
 
 ## 快速开始
 
 ### 从release下载app文件，双击运行，浏览器会自动打开streamlit页面。
 
-### 如果您的电脑有配制好的python环境，也可以克隆本项目，直接运行app.py(一般情况下macOS出场自带python)
+### 如果您的电脑有配置好的python环境，也可以克隆本项目，直接运行app.py(一般情况下macOS出场自带python)
 ```bash
 git clone https://github.com/your-username/repkg-webui.git
 ```
@@ -38,8 +38,12 @@ streamlit run app.py
 
 由于 [RePKG](https://github.com/notscuffed/repkg) 原作者目前仅提供了适用于 Windows 平台的预编译版本，本项目内置的 macOS 版内核是基于其开源代码在 macOS 环境下重新编译生成的。
 
+## 关于release
+使用platypus创建
 
 ## 写在最后
-其实也不知道为什么会想做一个macOS版本（
-就当是练习一下GitHub使用
-还有很多可以优化的地方
+- 其实也不知道为什么会想做一个macOS版本（就当是练习一下GitHub使用  
+
+- 还有很多可以优化的地方  
+
+- 后面可能会加一些奇奇怪怪的小功能
