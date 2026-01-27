@@ -1,49 +1,99 @@
-# RePKG WebUI (for macOS)
+# RePKG GUI 
 
-这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的图形化界面（WebUI），基于 Streamlit 构建。目前仅支持 macOS。
+这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面，基于 Electron + React + Vite 构建。
 
+## ✨ 特性
 
-## 快速开始
+- 🎨 **现代化 UI**：使用 Tailwind CSS 构建的美观界面
+- ⚡ **快速响应**：基于 Vite 的快速开发体验
+- 🖥️ **跨平台**：支持 macOS 和 Windows
 
-### 从release下载app文件，双击运行，浏览器会自动打开streamlit页面。
+## 🚀 快速开始
 
-### 如果您的电脑有配置好的python环境，也可以克隆本项目，直接运行app.py(一般情况下macOS出场自带python)
-```bash
-git clone https://github.com/your-username/repkg-webui.git
-```
+### 普通用户  
 
-```bash
-cd repkg-webui
-```
+从Release下载对应系统的文件。
 
-```bash
-pip install streamlit
-```
+### 开发环境
+
+1. **安装依赖**
 
 ```bash
-streamlit run app.py
+npm install
 ```
 
-## 使用技巧
+2. **启动开发服务器**
 
-- **提取 PKG**：在“Extract”功能中，点击“📁 文件”或“📂 目录”按钮选择输入，点击“📂 选择”设置输出。
-- **批量处理**：如果你有大量的 PKG 文件（如 Wallpaper Engine 的 content 目录），建议勾选“批量容错模式”，程序会逐个处理并自动跳过损坏的文件。
-- **TEX 转换**：如果只想转换独立的 `.tex` 文件为图片，请勾选“将 TEX 转换为图像 (-t)”并选择对应的目录。
+```bash
+npm run electron:dev
+```
+
+这将同时启动 Vite 开发服务器和 Electron 应用。
+
+### 构建应用
+
+**构建 macOS 应用：**
+
+```bash
+npm run electron:build:mac
+```
+
+**构建 Windows 应用：**
+
+```bash
+npm run electron:build:win
+# 或明确指定 x64 架构
+npm run electron:build:win64
+```
+
+## 使用说明
+
+### Extract (提取)
+
+- 选择 PKG 或 TEX 文件，或包含这些文件的目录
+- 配置输出目录和选项
+- 支持批量处理和容错模式
+
+### Info (信息)
+
+- 查看 PKG/TEX 文件的详细信息
+- 支持排序和过滤
+- 显示包内条目和 TEX 详细信息
+
+### Help (帮助)
+
+- 查看 RePKG 命令的帮助文档
+- 支持查看特定命令的帮助信息
+
+## 技术栈
+
+- **Electron** - 跨平台桌面应用框架
+- **React** - UI 框架
+- **Vite** - 构建工具
+- **Tailwind CSS** - 样式框架
+
+## 项目结构
+
+```
+repkg-webui/
+├── electron/          # Electron 主进程和预加载脚本
+│   ├── main.js       # 主进程
+│   └── preload.js    # 预加载脚本
+├── src/              # React 应用源码
+│   ├── components/   # React 组件
+│   ├── hooks/        # 自定义 Hooks
+│   ├── App.jsx       # 主应用组件
+│   └── main.jsx      # 入口文件
+├── resources/        # RePKG 可执行文件资源
+└── package.json      # 项目配置
+```
+
 
 ## 免责声明
 
 本工具仅为 RePKG 命令行工具的图形化封装，不包含任何 Wallpaper Engine 资源。请在遵守相关版权协议的前提下使用。
+软件处于开发初期，可能存在不稳定性，请不要在存放有重要文件的电脑上运行。
 
-## 关于 RePKG 内核说明
+## 相关链接
 
-由于 [RePKG](https://github.com/notscuffed/repkg) 原作者目前仅提供了适用于 Windows 平台的预编译版本，本项目内置的 macOS 版内核是基于其开源代码在 macOS 环境下重新编译生成的。
-
-## 关于release
-使用platypus创建
-
-## 写在最后
-- 其实也不知道为什么会想做一个macOS版本（就当是练习一下GitHub使用  
-
-- 还有很多可以优化的地方  
-
-- 后面可能会加一些奇奇怪怪的小功能
+- [RePKG 原项目](https://github.com/notscuffed/repkg)

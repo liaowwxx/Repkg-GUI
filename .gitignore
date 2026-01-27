@@ -1,4 +1,41 @@
-/outputs
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+dist-electron/
+*.app
+*.dmg
+*.zip
+*.nsis
+
+# Build resources (keep structure but ignore placeholder files)
+build/icon.ico
+
+# Development
+.vite/
 .DS_Store
+*.log
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Old files
+/outputs
 /venv
 RePKG WebUI.zip
+
+app.py
+BUILD_MACOS.md
+BUILD_WINDOWS.md
+QUICKSTART.md
+
