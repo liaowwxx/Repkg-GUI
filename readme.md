@@ -8,6 +8,12 @@
 - ⚡ **快速响应**：基于 Vite 的快速开发体验
 - 🖥️ **跨平台**：支持 macOS 和 Windows
 
+
+<img width="1184" height="764" alt="截屏2026-01-27 14 36 47" src="https://github.com/user-attachments/assets/ed6274e1-fea1-4380-ae09-4636247c9c8b" />
+
+
+
+
 ## 🚀 快速开始
 
 ### 普通用户  
