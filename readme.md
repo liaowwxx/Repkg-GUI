@@ -1,12 +1,12 @@
 # RePKG GUI 
 
-这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面，基于 Electron + React + Vite 构建。
+这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面，可以批量提取wallpaper engine壁纸文件
 
 ## ✨ 特性
 
+- 🖥️ **跨平台**：支持 macOS 和 Windows
 - 🎨 **现代化 UI**：使用 Tailwind CSS 构建的美观界面
 - ⚡ **快速响应**：基于 Vite 的快速开发体验
-- 🖥️ **跨平台**：支持 macOS 和 Windows
 
 
 <img width="1184" height="764" alt="截屏2026-01-27 14 36 47" src="https://github.com/user-attachments/assets/ed6274e1-fea1-4380-ae09-4636247c9c8b" />
@@ -18,7 +18,10 @@
 
 ### 普通用户  
 
-从Release下载对应系统的文件。
+从Release下载对应系统的文件。  
+Windows有便携版和安装版可选，建议使用便携版，安装版暂不支持更改安装位置。  
+macOS为.app文件，双击打开即可。  
+
 
 ### 开发环境
 
@@ -103,3 +106,7 @@ repkg-webui/
 ## 相关链接
 
 - [RePKG 原项目](https://github.com/notscuffed/repkg)
+
+## 写在最后
+
+项目基本是用AI辅助完成的，主要是自用以及代码存档。
