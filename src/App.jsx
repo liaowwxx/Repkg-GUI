@@ -69,7 +69,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">RePKG WebUI</h1>
-              <p className="text-sm text-slate-500">测试版v2.0.1</p>
+              <p className="text-sm text-slate-500">测试版v2.1.0</p>
             </div>
           </div>
         </div>
