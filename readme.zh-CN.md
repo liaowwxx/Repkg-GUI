@@ -2,6 +2,13 @@
 
 这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面，为 Wallpaper Engine 壁纸的批量提取与预览而设计。
 
+
+<div align="center">
+
+[English](README.md) | **简体中文**
+
+</div>
+
 ## ✨ 核心特性
 
 -  **可视化壁纸相册**：采用直观的网格预览模式，自动提取 `preview.jpg` 或 `preview.gif`，让寻找壁纸像刷相册一样简单。
