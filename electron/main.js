@@ -323,3 +323,97 @@ ipcMain.handle('get-platform', () => {
     isWindows: IS_WINDOWS,
   };
 });
+
+ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
+  if (!dirPath || !fs.existsSync(dirPath)) return [];
+  
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const wallpapers = [];
+    
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const subPath = path.join(dirPath, entry.name);
+        const subEntries = fs.readdirSync(subPath);
+        
+        let previewPath = null;
+        if (subEntries.includes('preview.jpg')) {
+          previewPath = path.join(subPath, 'preview.jpg');
+        } else if (subEntries.includes('preview.gif')) {
+          previewPath = path.join(subPath, 'preview.gif');
+        }
+        
+        if (previewPath) {
+          // 检查是否有 pkg 文件
+          const hasPkg = subEntries.some(file => file.toLowerCase().endsWith('.pkg'));
+          
+          // 将图片转换为 base64 以便在前端显示
+          const imageBuffer = fs.readFileSync(previewPath);
+          const ext = path.extname(previewPath).toLowerCase();
+          const mimeType = ext === '.gif' ? 'image/gif' : 'image/jpeg';
+          const base64Image = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+          
+          wallpapers.push({
+            id: entry.name,
+            name: entry.name,
+            path: subPath,
+            preview: base64Image,
+            isPkg: hasPkg,
+          });
+        }
+      }
+    }
+    return wallpapers;
+  } catch (error) {
+    console.error('扫描壁纸出错:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('copy-wallpaper-assets', async (event, { srcPath, destDir }) => {
+  if (!fs.existsSync(srcPath) || !destDir) return { success: false, error: '路径不存在' };
+  
+  try {
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    
+    const assetExtensions = ['.png', '.jpg', '.jpeg', '.mp4'];
+    let copiedCount = 0;
+    
+    // 递归搜索文件
+    function scanAndCopy(currentSrc, currentDest) {
+      const entries = fs.readdirSync(currentSrc, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        const srcFullPath = path.join(currentSrc, entry.name);
+        
+        if (entry.isDirectory()) {
+          // 如果是目录，递归处理
+          const destSubDir = path.join(currentDest, entry.name);
+          // 只有当该目录下可能有资源时才创建目录（或者直接按需创建）
+          scanAndCopy(srcFullPath, destSubDir);
+        } else {
+          // 如果是文件，检查扩展名
+          const ext = path.extname(entry.name).toLowerCase();
+          if (assetExtensions.includes(ext)) {
+            // 确保目标子目录存在
+            if (!fs.existsSync(currentDest)) {
+              fs.mkdirSync(currentDest, { recursive: true });
+            }
+            const destFullPath = path.join(currentDest, entry.name);
+            fs.copyFileSync(srcFullPath, destFullPath);
+            copiedCount++;
+          }
+        }
+      }
+    }
+    
+    scanAndCopy(srcPath, destDir);
+    
+    return { success: true, copiedCount };
+  } catch (error) {
+    console.error('递归复制资源出错:', error);
+    return { success: false, error: error.message };
+  }
+});

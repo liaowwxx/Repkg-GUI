@@ -84,6 +84,13 @@
       ],
       "icon": "build/icon.ico",
       "artifactName": "${productName}-${version}-win-x64.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "RePKG WebUI"
     }
   }
 }

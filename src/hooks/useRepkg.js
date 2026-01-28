@@ -23,13 +23,13 @@ export function useRepkg() {
     };
   }, []);
 
-  const runCommand = useCallback(async (args) => {
+  const runCommand = useCallback(async (args, shouldClear = true) => {
     if (typeof window === 'undefined' || !window.electronAPI) {
       setOutput('错误: electronAPI 不可用。请确保在 Electron 环境中运行。');
       return;
     }
 
-    setOutput('');
+    if (shouldClear) setOutput('');
     setIsRunning(true);
 
     try {
@@ -52,6 +52,8 @@ export function useRepkg() {
   return {
     runCommand,
     output,
+    setOutput,
     isRunning,
+    setIsRunning,
   };
 }

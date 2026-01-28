@@ -7,13 +7,20 @@ import HelpView from './components/HelpView';
 function App() {
   const [activeTab, setActiveTab] = useState('extract');
   const [isElectronReady, setIsElectronReady] = useState(false);
+  const [isMac, setIsMac] = useState(false);
 
   useEffect(() => {
     // 检查 electronAPI 是否可用
-    const checkElectronAPI = () => {
+    const checkElectronAPI = async () => {
       if (typeof window !== 'undefined') {
         if (window.electronAPI) {
           console.log('✅ electronAPI 已加载:', Object.keys(window.electronAPI));
+          try {
+            const platformInfo = await window.electronAPI.getPlatform();
+            setIsMac(platformInfo.isMac);
+          } catch (e) {
+            console.error('获取平台信息失败:', e);
+          }
           setIsElectronReady(true);
         } else {
           console.warn('⚠️ electronAPI 未找到，某些功能可能不可用');
@@ -52,10 +59,10 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+      <header className="bg-white border-b border-slate-200 shadow-sm drag-region select-none">
+        <div className={`max-w-7xl mx-auto px-6 py-4 ${isMac ? 'pl-20' : ''}`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
               <Package className="w-6 h-6 text-white" />
