@@ -1,97 +1,103 @@
-# RePKG WebUI 
+# RePKG WebUI
 
-这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面，为 Wallpaper Engine 壁纸的批量提取与预览而设计。
+A modern graphical interface for the [RePKG](https://github.com/notscuffed/repkg) command-line tool, designed for batch extraction and preview of Wallpaper Engine wallpapers.
 
-## ✨ 核心特性
+<div align="center">
 
--  **可视化壁纸相册**：采用直观的网格预览模式，自动提取 `preview.jpg` 或 `preview.gif`，让寻找壁纸像刷相册一样简单。
--  **智能解包与提取**：
-    - **PKG 自动处理**：针对 `.pkg` 格式进行深度解包。
-    - **非 PKG 智能扫描**：自动识别无需解包的壁纸，递归搜索并提取其子目录下的所有 `.png`、`.jpg`、`.mp4` 资源。
--  **批量多选处理**：支持在预览界面通过鼠标多选，一键批量执行提取任务。
--  **跨平台原生体验**：
-    - **macOS**：支持隐藏式标题栏拖拽，完美适配系统 UI。
-    - **Windows**：提供 NSIS 安装程序，支持自定义安装路径。
--  **实时日志系统**：详细记录每一个任务的处理进度与结果，支持批量容错。
--  **高级转换选项**：集成 TEX 图像转换、递归搜索、项目重命名等多种 RePKG 原生高级参数。
+**English** | [简体中文](README.zh-CN.md)
 
-<img width="1184" height="764" alt="界面预览" src="https://github.com/user-attachments/assets/ed6274e1-fea1-4380-ae09-4636247c9c8b" />
+</div>
+
+## ✨ Core Features
+
+- **Visual Wallpaper Gallery**: Intuitive grid preview mode that automatically extracts `preview.jpg` or `preview.gif`, making wallpaper discovery as easy as browsing a photo album.
+- **Smart Unpacking & Extraction**:
+  - **PKG Auto-processing**: Deep unpacking for `.pkg` formats.
+  - **Non-PKG Smart Scanning**: Automatically identifies wallpapers that don't require unpacking, recursively searches and extracts all `.png`, `.jpg`, `.mp4` resources from subdirectories.
+- **Batch Multi-selection**: Supports multi-selection in the preview interface, enabling one-click batch extraction tasks.
+- **Cross-platform Native Experience**:
+  - **macOS**: Supports hidden title bar dragging, perfectly adapted to system UI.
+  - **Windows**: Provides NSIS installer with customizable installation paths.
+- **Real-time Logging System**: Detailed recording of each task's progress and results, with batch error tolerance.
+- **Advanced Conversion Options**: Integrates TEX image conversion, recursive search, project renaming, and other native RePKG advanced parameters.
+
+<img width="1184" height="764" alt="Interface Preview" src="https://github.com/user-attachments/assets/ed6274e1-fea1-4380-ae09-4636247c9c8b" />
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 普通用户
-1. 从 [Releases](https://github.com/liao/repkg_webui/releases) 下载对应系统的文件。
-2. **Windows 用户**：运行 `.exe` 安装程序或使用便携版。
-3. **macOS 用户**：双击 `.dmg` 或 `.app` 即可运行。
+### For Regular Users
+1. Download the appropriate file for your system from [Releases](https://github.com/liao/repkg_webui/releases).
+2. **Windows Users**: Run the `.exe` installer or use the portable version.
+3. **macOS Users**: Double-click `.dmg` or `.app` to run.
 
-### 开发者
-1. **安装依赖**
+### For Developers
+1. **Install Dependencies**
    ```bash
    npm install
    ```
-2. **启动开发服务器**
+2. **Start Development Server**
    ```bash
    npm run electron:dev
    ```
-3. **构建应用**
+3. **Build Application**
    ```bash
-   # 构建 macOS 版
+   # Build for macOS
    npm run electron:build:mac
-   # 构建 Windows 版 (x64)
+   # Build for Windows (x64)
    npm run electron:build:win64
    ```
 
 ---
 
-## 📖 功能板块
+## 📖 Feature Modules
 
-### 1. Extract (提取)
-*   **输入**：支持选择单个文件或整个壁纸根目录。
-*   **预览区**：自动扫描子文件夹。带有“非PKG”角标的项目表示为纯资源文件夹。
-*   **设置区**：
-    *   **输出设置**：自定义提取后的存放位置。
-    *   **转换选项**：勾选“TEX 转图像”可将游戏内纹理还原为普通图片。
-    *   **高级选项**：支持单一目录模式、使用项目原名命名等。
+### 1. Extract
+*   **Input**: Supports selecting single files or entire wallpaper root directories.
+*   **Preview Area**: Automatically scans subfolders. Items with "Non-PKG" badges indicate pure resource folders.
+*   **Settings Area**:
+    *   **Output Settings**: Customize the extraction destination.
+    *   **Conversion Options**: Check "Convert TEX to Images" to restore game textures to normal images.
+    *   **Advanced Options**: Supports single directory mode, using original project names, etc.
 
-### 2. Info (信息)
-*   查看 PKG/TEX 文件的详细结构与属性。
-*   快速筛选包内特定文件条目。
+### 2. Info
+*   View detailed structure and properties of PKG/TEX files.
+*   Quickly filter specific file entries within packages.
 
-### 3. Help (帮助)
-*   内置 RePKG 完整命令行文档，方便查询参数含义。
+### 3. Help
+*   Built-in complete RePKG command-line documentation for easy parameter reference.
 
 ---
 
-##  技术栈
-- **Electron** - 桌面端运行环境
-- **React 18** - 响应式前端框架
-- **Vite** - 极速构建与热更新
-- **Tailwind CSS** - 现代化样式管理
+## 🛠️ Tech Stack
+- **Electron** - Desktop runtime environment
+- **React 18** - Responsive frontend framework
+- **Vite** - Fast build and hot reload
+- **Tailwind CSS** - Modern styling management
 
-##  项目结构
+## 📁 Project Structure
 ```text
 repkg-webui/
-├── electron/          # Electron 主进程与预加载脚本
-│   ├── main.js       # 处理文件扫描、递归复制等核心逻辑
-│   └── preload.js    # 跨进程 API 暴露
-├── src/              # React 应用源码
-│   ├── components/   # 包含 ExtractView (主界面)、Gallery 等组件
-│   └── hooks/        # useRepkg 封装了与命令行的交互
-├── resources/        # 各平台 RePKG 二进制文件
-└── build/            # 应用图标与安装配置
+├── electron/          # Electron main process & preload scripts
+│   ├── main.js       # Core logic for file scanning, recursive copying
+│   └── preload.js    # Cross-process API exposure
+├── src/              # React application source
+│   ├── components/   # Includes ExtractView (main interface), Gallery, etc.
+│   └── hooks/        # useRepkg encapsulates command-line interactions
+├── resources/        # RePKG binaries for each platform
+└── build/            # Application icons & installation configuration
 ```
 
-##  免责声明
-本工具仅为 RePKG 命令行工具的图形化封装，旨在提高壁纸提取的效率。
-*   本软件**不包含**任何 Wallpaper Engine 资源。
-*   请在遵守相关版权协议的前提下使用。
-*   软件处于开发阶段，建议在重要数据前进行备份。
+## ⚖️ Disclaimer
+This tool is merely a graphical wrapper for the RePKG command-line tool, designed to improve wallpaper extraction efficiency.
+*   This software **does not contain** any Wallpaper Engine resources.
+*   Please use in compliance with relevant copyright agreements.
+*   The software is in development stage; backing up important data is recommended.
 
-##  相关链接
-- [RePKG 原项目](https://github.com/notscuffed/repkg) - 感谢 notscuffed 的核心工具支持。
+## 🔗 Related Links
+- [RePKG Original Project](https://github.com/notscuffed/repkg) - Thanks to notscuffed for core tool support.
 
 ---
 
-> **写在最后**：本项目主要由 AI 辅助开发，旨在提供一个自用且高效的壁纸提取利器。如果您觉得有用，欢迎 Star 关注。
+> **Final Note**: This project was primarily AI-assisted in development, aiming to provide a personal yet efficient wallpaper extraction tool. If you find it useful, feel free to Star the repository.
