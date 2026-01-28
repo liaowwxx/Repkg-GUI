@@ -4,7 +4,7 @@ A modern graphical interface for the [RePKG](https://github.com/notscuffed/repkg
 
 <div align="center">
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](readme.zh-CN.md)
 
 </div>
 
