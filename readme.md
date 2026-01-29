@@ -33,7 +33,7 @@ This is a modern graphical user interface developed for the [RePKG](https://gith
 ## 🚀 Quick Start
 
 ### General Users
-1.  Download the file for your operating system from [Releases](https://github.com/liao/repkg_webui/releases).
+1.  Download the file for your operating system from [Releases](https://github.com/liaowwxx/Repkg-GUI/releases/).
 2.  **Windows Users**: Run the `.exe` installer or use the portable version.
 3.  **macOS Users**: Double-click the `.app` to run.
 

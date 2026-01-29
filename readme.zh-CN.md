@@ -35,7 +35,7 @@
 ## 🚀 快速开始
 
 ### 普通用户
-1. 从 [Releases](https://github.com/liao/repkg_webui/releases) 下载对应系统的文件。
+1. 从 [Releases](https://github.com/liaowwxx/Repkg-GUI/releases/) 下载对应系统的文件。
 2. **Windows 用户**：运行 `.exe` 安装程序或使用便携版。
 3. **macOS 用户**：双击 `.app` 即可运行。
 
