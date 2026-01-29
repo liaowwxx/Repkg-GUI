@@ -8,11 +8,9 @@ This is a modern graphical user interface developed for the [RePKG](https://gith
 
 </div>
 
+<img width="1312" height="1000" alt="截屏2026-01-29 11 52 15" src="https://github.com/user-attachments/assets/e9d2ee6a-ae2a-4e12-8fa5-e522651a2f89" />
 
 
-<img width="1308" height="887" alt="Screenshot 2026-01-29 at 02.36.51" src="https://github.com/user-attachments/assets/4b37f318-ac38-4cb5-81b3-9936f92929ad" />  
-
-<img width="1184" height="764" alt="UI Preview" src="https://github.com/user-attachments/assets/ed6274e1-fea1-4380-ae09-4636247c9c8b" />
 
 
 ## ✨ Core Features
