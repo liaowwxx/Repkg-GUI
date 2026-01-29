@@ -4,7 +4,7 @@ This is a modern graphical user interface developed for the [RePKG](https://gith
 
 <div align="center">
 
-[English](readme.md) | **简体中文**
+**English** | [简体中文](README.zh-CN.md)
 
 </div>
 

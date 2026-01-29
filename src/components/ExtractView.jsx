@@ -431,7 +431,7 @@ function ExtractView() {
             {/* Input Path */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                输入路径
+                输入路径，建议输入壁纸根目录
               </label>
               <div className="flex flex-col gap-2">
                 <input
