@@ -347,6 +347,18 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
           // 检查是否有 pkg 文件
           const hasPkg = subEntries.some(file => file.toLowerCase().endsWith('.pkg'));
           
+          // 读取 project.json
+          let projectInfo = {};
+          const projectJsonPath = path.join(subPath, 'project.json');
+          if (fs.existsSync(projectJsonPath)) {
+            try {
+              const content = fs.readFileSync(projectJsonPath, 'utf8');
+              projectInfo = JSON.parse(content);
+            } catch (err) {
+              console.error(`解析 project.json 失败 (${subPath}):`, err);
+            }
+          }
+
           // 将图片转换为 base64 以便在前端显示
           const imageBuffer = fs.readFileSync(previewPath);
           const ext = path.extname(previewPath).toLowerCase();
@@ -356,6 +368,10 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
           wallpapers.push({
             id: entry.name,
             name: entry.name,
+            title: projectInfo.title || entry.name,
+            type: projectInfo.type || 'unknown',
+            contentrating: projectInfo.contentrating || 'Everyone',
+            description: projectInfo.description || '',
             path: subPath,
             preview: base64Image,
             isPkg: hasPkg,
@@ -367,6 +383,45 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
   } catch (error) {
     console.error('扫描壁纸出错:', error);
     return [];
+  }
+});
+
+ipcMain.handle('copy-directory', async (event, { srcPath, destDir, customName }) => {
+  if (!fs.existsSync(srcPath) || !destDir) return { success: false, error: '路径不存在' };
+  
+  try {
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    
+    const baseName = customName || path.basename(srcPath);
+    const targetPath = path.join(destDir, baseName);
+    
+    // Node.js 16.7.0+ has fs.cpSync
+    if (fs.cpSync) {
+      fs.cpSync(srcPath, targetPath, { recursive: true });
+    } else {
+      // 递归复制函数
+      const copyRecursiveSync = (src, dest) => {
+        const stats = fs.statSync(src);
+        if (stats.isDirectory()) {
+          if (!fs.existsSync(dest)) {
+            fs.mkdirSync(dest, { recursive: true });
+          }
+          fs.readdirSync(src).forEach((child) => {
+            copyRecursiveSync(path.join(src, child), path.join(dest, child));
+          });
+        } else {
+          fs.copyFileSync(src, dest);
+        }
+      };
+      copyRecursiveSync(srcPath, targetPath);
+    }
+    
+    return { success: true, targetPath };
+  } catch (error) {
+    console.error('复制目录出错:', error);
+    return { success: false, error: error.message };
   }
 });
 

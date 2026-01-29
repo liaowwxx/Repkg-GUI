@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runRepkg: (args) => ipcRenderer.invoke('run-repkg', args),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   scanWallpapers: (dirPath) => ipcRenderer.invoke('scan-wallpapers', dirPath),
+  copyDirectory: (data) => ipcRenderer.invoke('copy-directory', data),
   copyWallpaperAssets: (data) => ipcRenderer.invoke('copy-wallpaper-assets', data),
   onRepkgOutput: (callback) => {
     ipcRenderer.on('repkg-output', (event, data) => callback(data));
