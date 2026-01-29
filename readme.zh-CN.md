@@ -11,9 +11,7 @@
 
 
 
-<img width="1308" height="887" alt="截屏2026-01-29 02 36 51" src="https://github.com/user-attachments/assets/4b37f318-ac38-4cb5-81b3-9936f92929ad" />  
-
-<img width="1184" height="764" alt="界面预览" src="https://github.com/user-attachments/assets/ed6274e1-fea1-4380-ae09-4636247c9c8b" />
+<img width="1312" height="1000" alt="截屏2026-01-29 11 52 15" src="https://github.com/user-attachments/assets/e9d2ee6a-ae2a-4e12-8fa5-e522651a2f89" />
 
 
 ## ✨ 核心特性
