@@ -5,12 +5,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFile: () => ipcRenderer.invoke('select-file'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   runRepkg: (args) => ipcRenderer.invoke('run-repkg', args),
+  stopRepkg: () => ipcRenderer.invoke('stop-repkg'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   scanWallpapers: (dirPath) => ipcRenderer.invoke('scan-wallpapers', dirPath),
   copyDirectory: (data) => ipcRenderer.invoke('copy-directory', data),
   copyWallpaperAssets: (data) => ipcRenderer.invoke('copy-wallpaper-assets', data),
   onRepkgOutput: (callback) => {
     ipcRenderer.on('repkg-output', (event, data) => callback(data));
+  },
+  onWallpaperFound: (callback) => {
+    ipcRenderer.on('wallpaper-found', (event, data) => callback(data));
+  },
+  removeWallpaperFoundListener: () => {
+    ipcRenderer.removeAllListeners('wallpaper-found');
   },
   removeRepkgOutputListener: () => {
     ipcRenderer.removeAllListeners('repkg-output');

@@ -11,7 +11,8 @@ export function useRepkg() {
     }
 
     const handleOutput = (data) => {
-      setOutput((prev) => prev + data);
+      // 过滤掉冗长的详细日志，只保留状态或由于是流式输出，这里我们可以选择不更新到 UI
+      // 除非是特定的状态行
     };
 
     window.electronAPI.onRepkgOutput(handleOutput);
@@ -49,8 +50,16 @@ export function useRepkg() {
     }
   }, []);
 
+  const stopCommand = useCallback(async () => {
+    if (window.electronAPI?.stopRepkg) {
+      await window.electronAPI.stopRepkg();
+      setIsRunning(false);
+    }
+  }, []);
+
   return {
     runCommand,
+    stopCommand,
     output,
     setOutput,
     isRunning,

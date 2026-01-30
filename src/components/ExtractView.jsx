@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
-import { FolderOpen, File, Play, Settings, ChevronDown, Check, Image as ImageIcon, Search, Filter } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { FolderOpen, File, Play, Settings, ChevronDown, Check, Image as ImageIcon, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRepkg } from '../hooks/useRepkg';
+
+const ITEMS_PER_PAGE = 32;
 
 function ExtractView() {
   const [inputPath, setInputPath] = useState(() => localStorage.getItem('repkg-inputPath') || '');
@@ -25,16 +27,30 @@ function ExtractView() {
   const [useName, setUseName] = useState(() => localStorage.getItem('repkg-useName') === 'true');
   const [showAdvanced, setShowAdvanced] = useState(() => localStorage.getItem('repkg-showAdvanced') === 'true');
   
+  const stopRef = useRef(false);
   const [wallpapers, setWallpapers] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isScanning, setIsScanning] = useState(false);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Search and Filter state
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState('all');
   
-  const { runCommand, output, isRunning, setOutput, setIsRunning } = useRepkg();
+  const { runCommand, stopCommand, output, isRunning, setOutput, setIsRunning } = useRepkg();
+
+  // Sanitize folder name
+  const sanitizePath = (name) => {
+    return name.replace(/[\\/:*?"<>|]/g, '');
+  };
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, typeFilter, ratingFilter]);
 
   // Persist paths to localStorage
   useEffect(() => {
@@ -115,17 +131,45 @@ function ExtractView() {
   const types = useMemo(() => ['all', ...new Set(wallpapers.map(w => w.type))].sort(), [wallpapers]);
   const ratings = useMemo(() => ['all', ...new Set(wallpapers.map(w => w.contentrating))].sort(), [wallpapers]);
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredWallpapers.length / ITEMS_PER_PAGE);
+  const pagedWallpapers = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredWallpapers.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredWallpapers, currentPage]);
+
   useEffect(() => {
     const scanPath = async () => {
       if (inputPath && window.electronAPI?.scanWallpapers) {
         setIsScanning(true);
+        setWallpapers([]); // Clear current wallpapers
+        setSelectedIds(new Set()); // Reset selection
+        
         try {
+          // Listen for incremental updates
+          const handleNewWallpaper = (wallpaper) => {
+            setWallpapers(prev => {
+              // Avoid duplicates just in case
+              if (prev.some(w => w.id === wallpaper.id)) return prev;
+              return [...prev, wallpaper];
+            });
+          };
+          
+          window.electronAPI.onWallpaperFound(handleNewWallpaper);
+          
           const results = await window.electronAPI.scanWallpapers(inputPath);
-          setWallpapers(results);
-          setSelectedIds(new Set()); // Reset selection when path changes
+          
+          // Cleanup listener
+          window.electronAPI.removeWallpaperFoundListener();
+          
+          // Optionally set the final results to ensure consistency
+          if (results && results.length > 0) {
+            setWallpapers(results);
+          }
         } catch (err) {
           console.error('扫描壁纸失败:', err);
           setWallpapers([]);
+          window.electronAPI.removeWallpaperFoundListener();
         } finally {
           setIsScanning(false);
         }
@@ -134,6 +178,12 @@ function ExtractView() {
       }
     };
     scanPath();
+    
+    return () => {
+      if (window.electronAPI?.removeWallpaperFoundListener) {
+        window.electronAPI.removeWallpaperFoundListener();
+      }
+    };
   }, [inputPath]);
 
   const toggleSelect = (id) => {
@@ -181,7 +231,17 @@ function ExtractView() {
     if (path) setOutputDir(path);
   };
 
+  const handleStop = async () => {
+    stopRef.current = true;
+    await stopCommand();
+  };
+
   const handleExtract = async () => {
+    if (isRunning) {
+      await handleStop();
+      return;
+    }
+
     if (!inputPath) {
       alert('请输入有效的输入路径');
       return;
@@ -207,37 +267,46 @@ function ExtractView() {
 
     if (selectedIds.size > 0) {
       const selectedWallpapers = wallpapers.filter(w => selectedIds.has(w.id));
-      let isFirst = true;
       setIsRunning(true);
+      stopRef.current = false;
+      setOutput(''); 
       
       for (const wp of selectedWallpapers) {
+        // 检查是否请求了停止
+        if (stopRef.current) break;
+
+        const originalName = wp.title || wp.name;
+        const displayName = sanitizePath(originalName);
+        
+        // 先添加一个“执行中”的状态
+        setOutput(prev => prev + `${displayName} - ⏳ 正在提取...\n`);
+        
         if (justCopy) {
-          if (isFirst) setOutput('');
-          setOutput(prev => prev + `\n正在原样复制目录: ${wp.title || wp.name}...`);
-          
           try {
             const result = await window.electronAPI.copyDirectory({
               srcPath: wp.path,
               destDir: outputDir,
-              customName: wp.title // Use title as directory name
+              customName: displayName
             });
             
-            if (result.success) {
-              setOutput(prev => prev + `\n✅ 成功复制到: ${result.targetPath}`);
-            } else {
-              setOutput(prev => prev + `\n❌ 复制失败: ${result.error}`);
-            }
+            setOutput(prev => {
+              const lines = prev.trim().split('\n');
+              const filtered = lines.filter(l => !l.startsWith(displayName));
+              const status = result.success ? '✅ 提取成功' : `❌ 提取失败: ${result.error}`;
+              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ${status}\n`;
+            });
           } catch (err) {
-            setOutput(prev => prev + `\n❌ 发生错误: ${err.message}`);
+            setOutput(prev => {
+              const lines = prev.trim().split('\n');
+              const filtered = lines.filter(l => !l.startsWith(displayName));
+              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ❌ 提取错误: ${err.message}\n`;
+            });
           }
         } else if (wp.isPkg) {
-          // If using RePKG to extract, and we want it in a title-named folder
-          const targetDir = outputDir ? (singleDir ? outputDir : `${outputDir}/${wp.title || wp.name}`) : `${wp.path}/extracted`;
+          const targetDir = outputDir ? (singleDir ? outputDir : `${outputDir}/${displayName}`) : `${wp.path}/extracted`;
           const currentArgs = [...commonArgs];
           
-          // Update output dir for this specific wallpaper if not singleDir
           if (!singleDir) {
-            // Find if -o is already there and replace it, or add it
             const oIndex = currentArgs.indexOf('-o');
             if (oIndex !== -1) {
               currentArgs[oIndex + 1] = targetDir;
@@ -246,13 +315,24 @@ function ExtractView() {
             }
           }
           
-          await runCommand([...currentArgs, wp.path], isFirst);
+          try {
+            const result = await window.electronAPI.runRepkg([...currentArgs, wp.path]);
+            setOutput(prev => {
+              const lines = prev.trim().split('\n');
+              const filtered = lines.filter(l => !l.startsWith(displayName));
+              const status = result.code === 0 ? '✅ 提取成功' : (result.code === -1 ? '⏹️ 已停止' : `❌ 提取失败 (代码 ${result.code})`);
+              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ${status}\n`;
+            });
+            if (result.code === -1) break; // 停止循环
+          } catch (err) {
+            setOutput(prev => {
+              const lines = prev.trim().split('\n');
+              const filtered = lines.filter(l => !l.startsWith(displayName));
+              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ❌ 提取错误: ${err.message}\n`;
+            });
+          }
         } else {
-          if (isFirst) setOutput('');
-          
-          const targetDir = outputDir ? (singleDir ? outputDir : `${outputDir}/${wp.title || wp.name}`) : `${wp.path}/extracted`;
-          
-          setOutput(prev => prev + `\n[非 PKG 壁纸] 正在复制资源: ${wp.title || wp.name}...`);
+          const targetDir = outputDir ? (singleDir ? outputDir : `${outputDir}/${displayName}`) : `${wp.path}/extracted`;
           
           try {
             const result = await window.electronAPI.copyWallpaperAssets({
@@ -260,18 +340,23 @@ function ExtractView() {
               destDir: targetDir
             });
             
-            if (result.success) {
-              setOutput(prev => prev + `\n✅ 成功复制 ${result.copiedCount} 个资源文件到: ${targetDir}`);
-            } else {
-              setOutput(prev => prev + `\n❌ 复制失败: ${result.error}`);
-            }
+            setOutput(prev => {
+              const lines = prev.trim().split('\n');
+              const filtered = lines.filter(l => !l.startsWith(displayName));
+              const status = result.success ? '✅ 提取成功' : `❌ 提取失败: ${result.error}`;
+              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ${status}\n`;
+            });
           } catch (err) {
-            setOutput(prev => prev + `\n❌ 发生错误: ${err.message}`);
+            setOutput(prev => {
+              const lines = prev.trim().split('\n');
+              const filtered = lines.filter(l => !l.startsWith(displayName));
+              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ❌ 提取错误: ${err.message}\n`;
+            });
           }
         }
-        isFirst = false;
       }
       setIsRunning(false);
+      stopRef.current = false;
     } else {
       await runCommand([...commonArgs, inputPath]);
     }
@@ -341,12 +426,12 @@ function ExtractView() {
               
               <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar" style={{ maxHeight: '600px' }}>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {filteredWallpapers.map((wp) => (
+                  {pagedWallpapers.map((wp) => (
                     <div 
                       key={wp.id}
                       onClick={() => toggleSelect(wp.id)}
                       className={`
-                        relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all
+                        relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all animate-fade-in
                         ${selectedIds.has(wp.id) 
                           ? 'border-primary-500 ring-2 ring-primary-200' 
                           : 'border-transparent hover:border-slate-300'
@@ -356,6 +441,7 @@ function ExtractView() {
                       <img 
                         src={wp.preview} 
                         alt={wp.title}
+                        loading="lazy"
                         className="w-full aspect-square object-cover bg-slate-100"
                       />
                       
@@ -405,6 +491,61 @@ function ExtractView() {
                   </div>
                 )}
               </div>
+              
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <div className="text-sm text-slate-500">
+                    第 {currentPage} / {totalPages} 页 (共 {filteredWallpapers.length} 个项目)
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="p-1.5 rounded-md border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    
+                    <div className="flex items-center gap-1">
+                      {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                        let pageNum;
+                        if (totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i;
+                        } else {
+                          pageNum = currentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
+                              currentPage === pageNum
+                                ? 'bg-primary-600 text-white'
+                                : 'text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-1.5 rounded-md border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              )}
               
               {selectedIds.size > 0 && (
                 <div className="mt-4 p-3 bg-primary-50 rounded-lg flex items-center justify-between">
@@ -585,11 +726,26 @@ function ExtractView() {
               <div className="pt-2">
                 <button
                   onClick={handleExtract}
-                  disabled={isRunning || !inputPath}
-                  className="btn-primary flex items-center gap-2 w-full justify-center py-3 shadow-md"
+                  disabled={(!isRunning && selectedIds.size === 0) || (!isRunning && !inputPath)}
+                  className={`flex items-center gap-2 w-full justify-center py-3 shadow-md rounded-lg font-medium transition-all ${
+                    isRunning 
+                      ? 'bg-red-500 hover:bg-red-600 text-white' 
+                      : 'btn-primary'
+                  }`}
                 >
-                  <Play className="w-5 h-5" />
-                  {isRunning ? '执行中...' : selectedIds.size > 0 ? (justCopy ? `复制选中项 (${selectedIds.size})` : `解包选中项 (${selectedIds.size})`) : (justCopy ? '开始执行复制' : '开始执行提取')}
+                  {isRunning ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      停止提取
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5" />
+                      {selectedIds.size > 0 
+                        ? (justCopy ? `复制选中项 (${selectedIds.size})` : `解包选中项 (${selectedIds.size})`) 
+                        : (justCopy ? '开始执行复制' : '开始执行提取')}
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -597,12 +753,38 @@ function ExtractView() {
         </div>
       </div>
 
-      {/* Output Log */}
+      {/* Output Log - Simplified */}
       {output && (
         <div className="card">
-          <h3 className="text-lg font-medium mb-4">输出日志</h3>
-          <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-sm overflow-auto max-h-96 custom-scrollbar">
-            <pre className="whitespace-pre-wrap">{output}</pre>
+          <h3 className="text-lg font-medium mb-4 flex items-center justify-between">
+            <span>提取进度</span>
+            <button 
+              onClick={() => setOutput('')}
+              className="text-xs text-slate-400 hover:text-slate-600 font-normal"
+            >
+              清除列表
+            </button>
+          </h3>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 max-h-64 overflow-y-auto custom-scrollbar">
+            <div className="flex flex-col gap-2">
+              {output.trim().split('\n').map((line, idx) => {
+                const isSuccess = line.includes('✅');
+                const isPending = line.includes('⏳');
+                const isStopped = line.includes('⏹️');
+                const [name, status] = line.split(' - ');
+                return (
+                  <div key={idx} className={`flex items-center justify-between p-2 rounded-md border ${
+                    isSuccess ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 
+                    isPending ? 'bg-amber-50 border-amber-100 text-amber-800' :
+                    isStopped ? 'bg-slate-100 border-slate-200 text-slate-600' :
+                    'bg-red-50 border-red-100 text-red-800'
+                  }`}>
+                    <span className="text-sm font-medium">{name}</span>
+                    <span className="text-xs font-bold">{status}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

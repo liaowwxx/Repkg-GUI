@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
 import { spawn } from 'child_process';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import os from 'os';
 import fs from 'fs';
 
@@ -10,6 +10,11 @@ const __dirname = path.dirname(__filename);
 
 const IS_MAC = process.platform === 'darwin';
 const IS_WINDOWS = process.platform === 'win32';
+
+// 注册自定义协议以处理本地图片预览，避免 Base64 占用大量内存
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'repkg-thumb', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+]);
 
 // 获取资源目录路径
 function getResourcesPath() {
@@ -134,6 +139,7 @@ function getExecutablePath() {
 }
 
 let mainWindow;
+let currentRepkgProcess = null;
 
 function createWindow() {
   // 获取 preload 脚本路径
@@ -150,7 +156,8 @@ function createWindow() {
       preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true,
+      webSecurity: false,
+      allowRunningInsecureContent: true, // 允许跨协议加载资源
     },
     titleBarStyle: IS_MAC ? 'hiddenInset' : 'default',
     backgroundColor: '#f8fafc',
@@ -217,6 +224,31 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // 处理自定义协议请求
+  protocol.handle('repkg-thumb', (request) => {
+    try {
+      const url = new URL(request.url);
+      // 将 hostname 和 pathname 组合回来，并解码
+      // 例如 repkg-thumb://local/C:/path... -> url.pathname 为 /C:/path...
+      let filePath = decodeURIComponent(url.pathname);
+      
+      // 在 Windows 下，pathname 通常以 /C:/... 开头，需要去掉开头的 /
+      if (IS_WINDOWS && filePath.startsWith('/')) {
+        filePath = filePath.slice(1);
+      }
+      // 在 macOS 下，如果路径不是以 / 开头（虽然 pathname 通常会带），补齐它
+      else if (!IS_WINDOWS && !filePath.startsWith('/')) {
+        filePath = '/' + filePath;
+      }
+      
+      const fileUrl = pathToFileURL(filePath).toString();
+      return net.fetch(fileUrl);
+    } catch (err) {
+      console.error('协议处理失败:', err);
+      return new Response('Error', { status: 500 });
+    }
+  });
+
   createWindow();
 
   app.on('activate', () => {
@@ -252,10 +284,14 @@ ipcMain.handle('select-folder', async () => {
 });
 
 ipcMain.handle('run-repkg', async (event, args) => {
+  if (currentRepkgProcess) {
+    return { code: -1, stderr: '已有正在运行的进程' };
+  }
+
   return new Promise((resolve, reject) => {
     const executable = getExecutablePath();
     
-    // 检查可执行文件是否存在
+    // ... (rest of the checks)
     if (!fs.existsSync(executable)) {
       const errorMsg = `找不到 RePKG 可执行文件: ${executable}\n请确保 resources/${IS_WINDOWS ? 'win-x64' : 'osx-arm64'}/ 目录存在且包含 RePKG${IS_WINDOWS ? '.exe' : ''} 文件`;
       console.error(errorMsg);
@@ -266,24 +302,10 @@ ipcMain.handle('run-repkg', async (event, args) => {
     const executableDir = path.dirname(executable);
     const executableName = path.basename(executable);
     
-    console.log('执行 RePKG:');
-    console.log('  可执行文件:', executable);
-    console.log('  工作目录:', executableDir);
-    console.log('  命令参数:', args);
-
-    // 在 macOS 上确保有执行权限
-    if (IS_MAC) {
-      try {
-        fs.chmodSync(executable, 0o755);
-      } catch (e) {
-        console.warn('无法设置执行权限:', e);
-      }
-    }
-
     const cmdPrefix = IS_WINDOWS ? '' : './';
     const fullCmd = `${cmdPrefix}${executableName}`;
 
-    const process = spawn(fullCmd, args, {
+    currentRepkgProcess = spawn(fullCmd, args, {
       cwd: executableDir,
       shell: false,
     });
@@ -291,18 +313,18 @@ ipcMain.handle('run-repkg', async (event, args) => {
     let stdout = '';
     let stderr = '';
 
-    process.stdout.on('data', (data) => {
+    currentRepkgProcess.stdout.on('data', (data) => {
       stdout += data.toString();
-      // 实时发送输出
       event.sender.send('repkg-output', data.toString());
     });
 
-    process.stderr.on('data', (data) => {
+    currentRepkgProcess.stderr.on('data', (data) => {
       stderr += data.toString();
       event.sender.send('repkg-output', data.toString());
     });
 
-    process.on('close', (code) => {
+    currentRepkgProcess.on('close', (code) => {
+      currentRepkgProcess = null;
       resolve({
         code,
         stdout,
@@ -310,10 +332,25 @@ ipcMain.handle('run-repkg', async (event, args) => {
       });
     });
 
-    process.on('error', (error) => {
+    currentRepkgProcess.on('error', (error) => {
+      currentRepkgProcess = null;
       reject(error);
     });
   });
+});
+
+ipcMain.handle('stop-repkg', () => {
+  if (currentRepkgProcess) {
+    if (IS_WINDOWS) {
+      // Windows 下使用 taskkill 确保杀死整个进程树
+      spawn('taskkill', ['/pid', currentRepkgProcess.pid, '/f', '/t']);
+    } else {
+      currentRepkgProcess.kill('SIGKILL');
+    }
+    currentRepkgProcess = null;
+    return true;
+  }
+  return false;
 });
 
 ipcMain.handle('get-platform', () => {
@@ -334,48 +371,55 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
     for (const entry of entries) {
       if (entry.isDirectory()) {
         const subPath = path.join(dirPath, entry.name);
-        const subEntries = fs.readdirSync(subPath);
-        
-        let previewPath = null;
-        if (subEntries.includes('preview.jpg')) {
-          previewPath = path.join(subPath, 'preview.jpg');
-        } else if (subEntries.includes('preview.gif')) {
-          previewPath = path.join(subPath, 'preview.gif');
-        }
-        
-        if (previewPath) {
-          // 检查是否有 pkg 文件
-          const hasPkg = subEntries.some(file => file.toLowerCase().endsWith('.pkg'));
+        // 检查目录是否存在且可读
+        try {
+          const subEntries = fs.readdirSync(subPath);
           
-          // 读取 project.json
-          let projectInfo = {};
-          const projectJsonPath = path.join(subPath, 'project.json');
-          if (fs.existsSync(projectJsonPath)) {
-            try {
-              const content = fs.readFileSync(projectJsonPath, 'utf8');
-              projectInfo = JSON.parse(content);
-            } catch (err) {
-              console.error(`解析 project.json 失败 (${subPath}):`, err);
-            }
+          let previewPath = null;
+          if (subEntries.includes('preview.jpg')) {
+            previewPath = path.join(subPath, 'preview.jpg');
+          } else if (subEntries.includes('preview.gif')) {
+            previewPath = path.join(subPath, 'preview.gif');
           }
-
-          // 将图片转换为 base64 以便在前端显示
-          const imageBuffer = fs.readFileSync(previewPath);
-          const ext = path.extname(previewPath).toLowerCase();
-          const mimeType = ext === '.gif' ? 'image/gif' : 'image/jpeg';
-          const base64Image = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
           
-          wallpapers.push({
-            id: entry.name,
-            name: entry.name,
-            title: projectInfo.title || entry.name,
-            type: projectInfo.type || 'unknown',
-            contentrating: projectInfo.contentrating || 'Everyone',
-            description: projectInfo.description || '',
-            path: subPath,
-            preview: base64Image,
-            isPkg: hasPkg,
-          });
+          if (previewPath) {
+            // 检查是否有 pkg 文件
+            const hasPkg = subEntries.some(file => file.toLowerCase().endsWith('.pkg'));
+            
+            // 读取 project.json
+            let projectInfo = {};
+            const projectJsonPath = path.join(subPath, 'project.json');
+            if (fs.existsSync(projectJsonPath)) {
+              try {
+                const content = fs.readFileSync(projectJsonPath, 'utf8');
+                projectInfo = JSON.parse(content);
+              } catch (err) {
+                console.error(`解析 project.json 失败 (${subPath}):`, err);
+              }
+            }
+
+            // 使用更标准的 URL 构造方式：repkg-thumb://local/PATH
+            // 这样可以确保 URL 被浏览器正确解析
+            const previewUrl = `repkg-thumb://local/${previewPath}`;
+            
+            const wallpaper = {
+              id: entry.name,
+              name: entry.name,
+              title: projectInfo.title || entry.name,
+              type: projectInfo.type || 'unknown',
+              contentrating: projectInfo.contentrating || 'Everyone',
+              description: projectInfo.description || '',
+              path: subPath,
+              preview: previewUrl,
+              isPkg: hasPkg,
+            };
+
+            // 发送单个壁纸发现事件
+            event.sender.send('wallpaper-found', wallpaper);
+            wallpapers.push(wallpaper);
+          }
+        } catch (subErr) {
+          console.error(`访问子目录失败 (${subPath}):`, subErr);
         }
       }
     }
