@@ -611,7 +611,7 @@ ipcMain.handle('get-largest-assets', async (event, dirPath) => {
   try {
     scan(dirPath);
     // 按大小降序排序并取前 5 个
-    return assets.sort((a, b) => b.size - a.size).slice(0, 5);
+    return assets.sort((a, b) => b.size - a.size).slice(0, 15);
   } catch (error) {
     console.error('获取最大资源出错:', error);
     return [];
