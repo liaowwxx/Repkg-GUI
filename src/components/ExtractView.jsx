@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { FolderOpen, File, Play, Settings, ChevronDown, Check, Image as ImageIcon, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FolderOpen, File, Play, Settings, ChevronDown, Check, Image as ImageIcon, Search, Filter, ChevronLeft, ChevronRight, MoreVertical, X, Monitor } from 'lucide-react';
 import { useRepkg } from '../hooks/useRepkg';
 
 const ITEMS_PER_PAGE = 32;
@@ -31,6 +31,13 @@ function ExtractView() {
   const [wallpapers, setWallpapers] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isScanning, setIsScanning] = useState(false);
+
+  // Context Menu state
+  const [contextMenu, setContextMenu] = useState(null);
+  
+  // Asset Modal state
+  const [assetModal, setAssetModal] = useState(null); // { wp, assets }
+  const [isSettingWallpaper, setIsSettingWallpaper] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -229,6 +236,97 @@ function ExtractView() {
     }
     const path = await window.electronAPI.selectFolder();
     if (path) setOutputDir(path);
+  };
+
+  const handleContextMenu = (e, wp) => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      wp
+    });
+  };
+
+  const closeContextMenu = () => setContextMenu(null);
+
+  useEffect(() => {
+    const handleGlobalClick = () => closeContextMenu();
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
+
+  const handleOpenFolder = async (wp) => {
+    if (window.electronAPI?.openPath) {
+      await window.electronAPI.openPath(wp.path);
+    }
+    closeContextMenu();
+  };
+
+  const handleSetAsWallpaper = async (wp) => {
+    closeContextMenu();
+    
+    if (!outputDir) {
+      alert('请先选择输出目录，以便创建 cache 文件夹');
+      return;
+    }
+
+    setIsSettingWallpaper(true);
+    try {
+      // 1. 获取并确保 cache 目录存在
+      const cachePath = await window.electronAPI.getCacheDir(outputDir);
+      const wpCachePath = `${cachePath}/${sanitizePath(wp.title || wp.name)}`;
+      await window.electronAPI.ensureDir(wpCachePath);
+
+      // 2. 解包到 cache 目录
+      if (wp.isPkg) {
+        // 优先使用具体的 pkgPath，如果没有则退而求其次使用 wp.path
+        const inputPath = wp.pkgPath || wp.path;
+        const args = ['extract', '-o', wpCachePath, '-t', '-r', '--overwrite', inputPath];
+        const result = await window.electronAPI.runRepkg(args);
+        if (result.code !== 0 && result.code !== -1) {
+          throw new Error(`解包失败: ${result.stderr}`);
+        }
+      } else {
+        await window.electronAPI.copyWallpaperAssets({
+          srcPath: wp.path,
+          destDir: wpCachePath
+        });
+      }
+
+      // 3. 检索最大的 5 个资源
+      const assets = await window.electronAPI.getLargestAssets(wpCachePath);
+      
+      if (assets.length === 0) {
+        alert('未在解包目录中找到支持的视频或图片文件');
+        return;
+      }
+
+      // 4. 弹出选择窗口
+      setAssetModal({ wp, assets });
+    } catch (err) {
+      console.error('设置壁纸流程出错:', err);
+      alert(`设置壁纸失败: ${err.message}`);
+    } finally {
+      setIsSettingWallpaper(false);
+    }
+  };
+
+  const selectAssetAsWallpaper = async (asset) => {
+    try {
+      const result = await window.electronAPI.setWallpaper(asset.path);
+      if (result.success) {
+        alert('壁纸设置成功！');
+        setAssetModal(null);
+      } else {
+        if (result.isVideo) {
+          alert(`${result.error}\n文件路径: ${result.path}`);
+        } else {
+          alert(`设置失败: ${result.error}`);
+        }
+      }
+    } catch (err) {
+      alert(`设置壁纸出错: ${err.message}`);
+    }
   };
 
   const handleStop = async () => {
@@ -430,6 +528,7 @@ function ExtractView() {
                     <div 
                       key={wp.id}
                       onClick={() => toggleSelect(wp.id)}
+                      onContextMenu={(e) => handleContextMenu(e, wp)}
                       className={`
                         relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all animate-fade-in
                         ${selectedIds.has(wp.id) 
@@ -756,38 +855,175 @@ function ExtractView() {
       {/* Output Log - Simplified */}
       {output && (
         <div className="card">
-          <h3 className="text-lg font-medium mb-4 flex items-center justify-between">
-            <span>提取进度</span>
-            <button 
-              onClick={() => setOutput('')}
-              className="text-xs text-slate-400 hover:text-slate-600 font-normal"
-            >
-              清除列表
-            </button>
-          </h3>
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 max-h-64 overflow-y-auto custom-scrollbar">
-            <div className="flex flex-col gap-2">
-              {output.trim().split('\n').map((line, idx) => {
-                const isSuccess = line.includes('✅');
-                const isPending = line.includes('⏳');
-                const isStopped = line.includes('⏹️');
-                const [name, status] = line.split(' - ');
-                return (
-                  <div key={idx} className={`flex items-center justify-between p-2 rounded-md border ${
-                    isSuccess ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 
-                    isPending ? 'bg-amber-50 border-amber-100 text-amber-800' :
-                    isStopped ? 'bg-slate-100 border-slate-200 text-slate-600' :
-                    'bg-red-50 border-red-100 text-red-800'
-                  }`}>
-                    <span className="text-sm font-medium">{name}</span>
-                    <span className="text-xs font-bold">{status}</span>
-                  </div>
-                );
-              })}
-            </div>
+          {/* ... */}
+        </div>
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu 
+          x={contextMenu.x} 
+          y={contextMenu.y} 
+          onOpenFolder={() => handleOpenFolder(contextMenu.wp)}
+          onSetAsWallpaper={() => handleSetAsWallpaper(contextMenu.wp)}
+        />
+      )}
+
+      {/* Asset Selection Modal */}
+      {assetModal && (
+        <AssetModal 
+          wp={assetModal.wp} 
+          assets={assetModal.assets} 
+          onClose={() => setAssetModal(null)}
+          onSelect={selectAssetAsWallpaper}
+        />
+      )}
+
+      {/* Loading Overlay for Wallpaper Setting */}
+      {isSettingWallpaper && (
+        <div className="fixed inset-0 z-[100] bg-white/60 backdrop-blur-[2px] flex items-center justify-center">
+          <div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center gap-4">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div>
+            <p className="text-sm font-medium text-slate-700">正在准备壁纸资源...</p>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ContextMenu({ x, y, onOpenFolder, onSetAsWallpaper }) {
+  return (
+    <div 
+      className="fixed z-50 bg-white border border-slate-200 shadow-xl rounded-lg py-1 min-w-[160px] animate-in fade-in zoom-in duration-100"
+      style={{ left: x, top: y }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button 
+        onClick={onOpenFolder}
+        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"
+      >
+        <FolderOpen className="w-4 h-4" />
+        打开壁纸文件夹
+      </button>
+      <button 
+        onClick={onSetAsWallpaper}
+        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"
+      >
+        <Monitor className="w-4 h-4" />
+        设置为桌面壁纸
+      </button>
+    </div>
+  );
+}
+
+function AssetModal({ wp, assets, onClose, onSelect }) {
+  const formatSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const getAssetUrl = (path) => {
+    // 确保路径前缀正确，不产生多余的斜杠
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `repkg-thumb://local${normalizedPath}`;
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">选择壁纸文件</h3>
+            <p className="text-sm text-slate-500 mt-1">从解包的文件中选择一个（按大小排序的前5个）</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+            <X className="w-6 h-6 text-slate-400" />
+          </button>
+        </div>
+        
+        <div className="p-6 overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-1 gap-6">
+            {assets.map((asset, idx) => (
+              <div 
+                key={idx}
+                className="group flex flex-col md:flex-row gap-6 p-4 border border-slate-200 rounded-2xl hover:border-primary-500 hover:bg-primary-50 transition-all"
+              >
+                {/* Preview Section */}
+                <div className="w-full md:w-64 aspect-video bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-100">
+                  {asset.ext === '.mp4' ? (
+                    <video 
+                      src={getAssetUrl(asset.path)}
+                      className="w-full h-full object-cover"
+                      muted
+                      preload="metadata"
+                      onMouseOver={e => {
+                        const playPromise = e.target.play();
+                        if (playPromise !== undefined) {
+                          playPromise.catch(error => {
+                            console.log("视频播放被拦截或失败:", error);
+                          });
+                        }
+                      }}
+                      onMouseOut={e => {
+                        e.target.pause();
+                        e.target.currentTime = 0;
+                      }}
+                      loop
+                    />
+                  ) : (
+                    <img 
+                      src={getAssetUrl(asset.path)}
+                      alt={asset.name}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                </div>
+
+                {/* Info Section */}
+                <div className="flex-1 flex flex-col justify-center min-w-0">
+                  <p className="text-lg font-bold text-slate-900 truncate" title={asset.name}>{asset.name}</p>
+                  <div className="flex items-center gap-3 mt-2">
+                    <span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">
+                      {asset.ext.slice(1)}
+                    </span>
+                    <span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span>
+                  </div>
+                  <div className="mt-4 flex items-center gap-2 text-xs text-slate-400">
+                    {asset.ext === '.mp4' ? (
+                      <span className="flex items-center gap-1">
+                        <Play className="w-3 h-3" /> 鼠标悬停预览视频
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" /> 高清图像资源
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Section */}
+                <div className="flex items-center shrink-0">
+                  <button 
+                    onClick={() => onSelect(asset)}
+                    className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg shadow-primary-200"
+                  >
+                    应用为壁纸
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center shrink-0">
+          <p className="text-xs text-slate-400 italic">缓存文件夹将在退出软件时自动清除</p>
+        </div>
+      </div>
     </div>
   );
 }
