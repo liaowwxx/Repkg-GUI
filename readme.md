@@ -1,80 +1,76 @@
-# RePKG WebUI
+# RePKG ToolBox
 
-This is a modern graphical user interface developed for the [RePKG](https://github.com/notscuffed/repkg) command-line tool, designed for batch extraction and preview of Wallpaper Engine wallpapers.
+A modern graphical interface developed for the [RePKG](https://github.com/notscuffed/repkg) command-line tool, enabling batch preview/unpacking of Wallpaper Engine wallpaper files on macOS. Also allows setting dynamic/static wallpapers for Mac.
 
 <div align="center">
 
-**English** | [简体中文](readme.zh-CN.md)
+[English](readme.md) | **简体中文**
 
 </div>
 
-<img width="1312" height="1000" alt="截屏2026-01-29 11 52 15" src="https://github.com/user-attachments/assets/e9d2ee6a-ae2a-4e12-8fa5-e522651a2f89" />
 
 
+<img width="1312" height="1000" alt="Screenshot 2026-01-29 at 11.52.15 AM" src="https://github.com/user-attachments/assets/e9d2ee6a-ae2a-4e12-8fa5-e522651a2f89" />
+<img width="1052" height="588" alt="Screenshot 2026-02-01 at 00.20.40 AM" src="https://github.com/user-attachments/assets/c570fb01-4a28-4799-b43f-02ca9b9fce87" />
 
 
 ## ✨ Core Features
 
-*   **Visual Wallpaper Gallery**: Utilizes an intuitive grid preview mode, automatically extracting `preview.jpg` or `preview.gif`, making finding wallpapers as simple as browsing a photo album.
-*   **Categorize/Search/Find**: Analyze JSON files to freely filter and search through wallpapers.
-*   **Intelligent Unpacking & Extraction**:
-    *   **Automatic PKG Processing**: Deep unpacking specifically for `.pkg` files.
-    *   **Non-PKG Smart Scanning**: Automatically identifies wallpapers that don't require unpacking, recursively searching for and extracting all `.png`, `.jpg`, `.mp4` resources within their subdirectories.
-    *   **Copy-Only Option**: Check an option to perform fast wallpaper dumping by copying only.
-*   **Batch Multi-select Processing**: Supports multi-selecting items in the preview interface with the mouse to perform batch extraction tasks with one click.
-*   **Cross-Platform Native Experience**:
-    Developed with Electron for a consistent experience across platforms.
-*   **Real-time Logging System**: Logs detailed processing progress and results for each task, supporting batch error tolerance.
+-   **Visual Wallpaper Gallery**: Features an intuitive grid preview mode, making finding wallpapers as easy as browsing an album.
+-   **Set Video Wallpaper for macOS**: Right-click on a previewed wallpaper, the program will automatically unpack it, display the included resource files, and allow you to freely select a video/image to set as your Mac desktop wallpaper.
+-   **Categorized Search/Filter**: Analyze JSON metadata to freely filter and search wallpapers.
+-   **Smart Unpacking & Extraction**:
+    -   **PKG Automatic Processing**: Deep unpacking for `.pkg` files.
+    -   **Non-PKG Smart Scan**: Automatically identifies wallpapers that don't require unpacking, recursively searches and extracts all `.png`, `.jpg`, `.mp4` resources from their subdirectories.
+    -   **Copy-Only Option**: Check the 'Copy Only' option in settings for quick wallpaper dumping.
+-   **Batch Multi-selection Processing**: Supports multi-selection via mouse in the preview interface for one-click batch extraction tasks.
+-   **Real-time Logging System**: Detailed logging for every task's progress and results, supporting batch error tolerance.
 
 ---
 
 ## 🚀 Quick Start
 
-### General Users
-1.  Download the file for your operating system from [Releases](https://github.com/liaowwxx/Repkg-GUI/releases/).
-2.  **Windows Users**: Run the `.exe` installer or use the portable version.
-3.  **macOS Users**: Double-click the `.app` to run.
+### Regular Users
+1. Download the appropriate file for your system from [Releases](https://github.com/liaowwxx/Repkg-GUI/releases/).
+3. **macOS Users**: Double-click the `.app` to run, or use the dmg installer.
 
 ### Developers
-1.  **Install Dependencies**
-    ```bash
-    npm install
-    ```
-2.  **Start the Development Server**
-    ```bash
-    npm run electron:dev
-    ```
-3.  **Build the Application**
-    ```bash
-    # Build for macOS
-    npm run electron:build:mac
-    # Build for Windows (x64)
-    npm run electron:build:win64
-    ```
-
+1. **Install Dependencies**
+   ```bash
+   npm install
+   ```
+2. **Start Development Server**
+   ```bash
+   npm run electron:dev
+   ```
+3. **Build the Application**
+   ```bash
+   # Build for macOS
+   npm run electron:build:mac
+   ```
 
 ## Project Structure
 ```text
 repkg-webui/
 ├── electron/          # Electron Main Process & Preload Scripts
 │   ├── main.js       # Core logic for file scanning, recursive copying, etc.
-│   └── preload.js    # Exposes APIs across processes
+│   └── preload.js    # Cross-process API exposure
 ├── src/              # React Application Source Code
-│   ├── components/   # Contains ExtractView (main interface), Gallery, and other components
+│   ├── components/   # Includes ExtractView (main interface), Gallery, etc.
 │   └── hooks/        # useRepkg hook encapsulating command-line interaction
-├── resources/        # RePKG binaries for various platforms
+├── resources/        # Platform-specific RePKG binaries
 └── build/            # Application icons and installation configurations
 ```
 
 ## Disclaimer
-This tool is merely a graphical wrapper for the RePKG command-line tool, aiming to improve the efficiency of wallpaper extraction.
-*   This software does **not** contain any Wallpaper Engine assets.
+This tool is solely a graphical wrapper for the RePKG command-line tool, aiming to improve wallpaper extraction efficiency.
+*   This software does **NOT** contain any Wallpaper Engine resources.
 *   Please use it in compliance with relevant copyright agreements.
-*   The software is in the development stage; it is not recommended to run it on computers containing important data.
+*   The software is in the development phase; running it on computers with critical data is not recommended.
 
 ## Related Links
-*   [RePKG Original Project](https://github.com/notscuffed/repkg) - Thanks to notscuffed for the core tool support.
+- [RePKG Original Project](https://github.com/notscuffed/repkg) - Thanks to notscuffed for the core tool support.
 
 ---
 
-> **Final Note**: This project was primarily developed with the assistance of AI, aiming to provide a personal and efficient tool for wallpaper extraction. If you find it useful, feel free to give it a Star.
+> **Final Note**: This project is primarily developed with the assistance of AI, aiming to provide a personal-use and highly efficient wallpaper extraction tool. If you find it useful, stars are welcome.

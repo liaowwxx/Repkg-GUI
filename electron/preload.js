@@ -10,6 +10,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scanWallpapers: (dirPath) => ipcRenderer.invoke('scan-wallpapers', dirPath),
   copyDirectory: (data) => ipcRenderer.invoke('copy-directory', data),
   copyWallpaperAssets: (data) => ipcRenderer.invoke('copy-wallpaper-assets', data),
+  openPath: (filePath) => ipcRenderer.invoke('open-path', filePath),
+  getCacheDir: (baseDir) => ipcRenderer.invoke('get-cache-dir', baseDir),
+  ensureDir: (dirPath) => ipcRenderer.invoke('ensure-dir', dirPath),
+  getLargestAssets: (dirPath) => ipcRenderer.invoke('get-largest-assets', dirPath),
+  setWallpaper: (filePath) => ipcRenderer.invoke('set-wallpaper', filePath),
   onRepkgOutput: (callback) => {
     ipcRenderer.on('repkg-output', (event, data) => callback(data));
   },
