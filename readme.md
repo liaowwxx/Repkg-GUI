@@ -4,7 +4,7 @@ A modern graphical interface developed for the [RePKG](https://github.com/notscu
 
 <div align="center">
 
-[English](readme.md) | **简体中文**
+**English** | [简体中文](readme.zh-CN.md)
 
 </div>
 
