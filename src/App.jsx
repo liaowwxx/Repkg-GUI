@@ -59,9 +59,9 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col">
+    <div className="h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 shadow-sm drag-region select-none">
+      <header className="bg-white border-b border-slate-200 shadow-sm drag-region select-none shrink-0">
         <div className={`max-w-7xl mx-auto px-6 py-4 ${isMac ? 'pl-20' : ''}`}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
@@ -76,7 +76,7 @@ function App() {
       </header>
 
       {/* Navigation Tabs */}
-      <nav className="bg-white border-b border-slate-200">
+      <nav className="bg-white border-b border-slate-200 shrink-0">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex gap-1">
             {tabs.map((tab) => {
@@ -104,15 +104,17 @@ function App() {
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        {activeTab === 'extract' && <ExtractView />}
-        {activeTab === 'info' && <InfoView />}
-        {activeTab === 'help' && <HelpView />}
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-hidden relative">
+        <div className="h-full max-w-7xl mx-auto px-6 py-6 overflow-hidden flex flex-col">
+          {activeTab === 'extract' && <ExtractView />}
+          {activeTab === 'info' && <div className="h-full overflow-y-auto"><InfoView /></div>}
+          {activeTab === 'help' && <div className="h-full overflow-y-auto"><HelpView /></div>}
+        </div>
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto py-6 text-center text-sm text-slate-500">
+      <footer className="py-3 text-center text-xs text-slate-500 bg-white border-t border-slate-100 shrink-0">
         Built with Electron & React for RePKG
       </footer>
     </div>

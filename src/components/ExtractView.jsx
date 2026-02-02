@@ -461,13 +461,13 @@ function ExtractView() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className={`grid grid-cols-1 ${wallpapers.length > 0 ? 'lg:grid-cols-3' : ''} gap-6`}>
+    <div className="flex flex-col gap-6 h-full overflow-hidden">
+      <div className={`grid grid-cols-1 ${wallpapers.length > 0 ? 'lg:grid-cols-3' : ''} gap-6 h-full overflow-hidden`}>
         {/* Left Side: Wallpaper Gallery */}
         {wallpapers.length > 0 && (
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <div className="card h-full flex flex-col">
-              <div className="flex flex-col gap-4 mb-4">
+          <div className="lg:col-span-2 flex flex-col min-h-0">
+            <div className="card h-full flex flex-col overflow-hidden">
+              <div className="flex flex-col gap-4 mb-4 shrink-0">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-semibold flex items-center gap-2">
                     <ImageIcon className="w-5 h-5 text-primary-600" />
@@ -522,7 +522,7 @@ function ExtractView() {
                 </div>
               </div>
               
-              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar" style={{ maxHeight: '600px' }}>
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {pagedWallpapers.map((wp) => (
                     <div 
@@ -593,7 +593,7 @@ function ExtractView() {
               
               {/* Pagination Controls */}
               {totalPages > 1 && (
-                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between shrink-0">
                   <div className="text-sm text-slate-500">
                     第 {currentPage} / {totalPages} 页 (共 {filteredWallpapers.length} 个项目)
                   </div>
@@ -647,7 +647,7 @@ function ExtractView() {
               )}
               
               {selectedIds.size > 0 && (
-                <div className="mt-4 p-3 bg-primary-50 rounded-lg flex items-center justify-between">
+                <div className="mt-4 p-3 bg-primary-50 rounded-lg flex items-center justify-between shrink-0">
                   <span className="text-sm font-medium text-primary-700">
                     已选择 {selectedIds.size} 个项目
                   </span>
@@ -664,189 +664,191 @@ function ExtractView() {
         )}
 
         {/* Right Side: Settings */}
-        <div className={wallpapers.length > 0 ? 'lg:col-span-1' : ''}>
-          <div className="card sticky top-6">
-            <h2 className="text-xl font-semibold mb-4">提取设置</h2>
+        <div className={`${wallpapers.length > 0 ? 'lg:col-span-1' : ''} flex flex-col min-h-0`}>
+          <div className="card h-full flex flex-col overflow-hidden">
+            <h2 className="text-xl font-semibold mb-4 shrink-0">提取设置</h2>
             
-            {/* Input Path */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                输入路径，建议输入壁纸根目录
-              </label>
-              <div className="flex flex-col gap-2">
-                <input
-                  type="text"
-                  value={inputPath}
-                  onChange={(e) => setInputPath(e.target.value)}
-                  placeholder="PKG/TEX 文件或目录"
-                  className="input-field w-full"
-                />
-                <div className="flex gap-2">
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              {/* Input Path */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  输入路径，建议输入壁纸根目录
+                </label>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    value={inputPath}
+                    onChange={(e) => setInputPath(e.target.value)}
+                    placeholder="PKG/TEX 文件或目录"
+                    className="input-field w-full"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSelectFile}
+                      className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                    >
+                      <File className="w-4 h-4" />
+                      文件
+                    </button>
+                    <button
+                      onClick={handleSelectFolder}
+                      className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                    >
+                      <FolderOpen className="w-4 h-4" />
+                      目录
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {/* Output Settings */}
+                <div>
+                  <h3 className="text-lg font-medium mb-3 flex items-center gap-2">
+                    <Settings className="w-5 h-5" />
+                    输出设置
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        输出目录 (-o)
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={outputDir}
+                          onChange={(e) => setOutputDir(e.target.value)}
+                          placeholder="选择输出目录"
+                          className="input-field flex-1"
+                        />
+                        <button
+                          onClick={handleSelectOutput}
+                          className="btn-secondary whitespace-nowrap"
+                        >
+                          选择
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        忽略扩展名 (-i)
+                      </label>
+                      <input
+                        type="text"
+                        value={ignoreExts}
+                        onChange={(e) => setIgnoreExts(e.target.value)}
+                        placeholder="txt,log"
+                        className="input-field"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Conversion Options */}
+                <div>
+                  <h3 className="text-lg font-medium mb-3">选项</h3>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
+                      <input
+                        type="checkbox"
+                        checked={convertTex}
+                        onChange={(e) => setConvertTex(e.target.checked)}
+                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                      />
+                      <span className="text-sm">TEX 转图像 (-t)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
+                      <input
+                        type="checkbox"
+                        checked={overwrite}
+                        onChange={(e) => setOverwrite(e.target.checked)}
+                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                      />
+                      <span className="text-sm">覆盖现有文件</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
+                      <input
+                        type="checkbox"
+                        checked={justCopy}
+                        onChange={(e) => setJustCopy(e.target.checked)}
+                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                      />
+                      <span className="text-sm">仅原样复制文件夹 (不解包)</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Advanced Options */}
+                <div>
                   <button
-                    onClick={handleSelectFile}
-                    className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                    className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
                   >
-                    <File className="w-4 h-4" />
-                    文件
+                    <ChevronDown
+                      className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+                    />
+                    高级选项
                   </button>
-                  <button
-                    onClick={handleSelectFolder}
-                    className="btn-secondary flex-1 flex items-center justify-center gap-2"
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    目录
-                  </button>
+                  {showAdvanced && (
+                    <div className="mt-3 space-y-2 p-3 bg-slate-50 rounded-lg">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={recursive}
+                          onChange={(e) => setRecursive(e.target.checked)}
+                          className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                        />
+                        <span className="text-sm">递归搜索 (-r)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={singleDir}
+                          onChange={(e) => setSingleDir(e.target.checked)}
+                          className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                        />
+                        <span className="text-sm">单一目录 (-s)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useName}
+                          onChange={(e) => setUseName(e.target.checked)}
+                          className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                        />
+                        <span className="text-sm">使用项目名称 (-n)</span>
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="space-y-6">
-              {/* Output Settings */}
-              <div>
-                <h3 className="text-lg font-medium mb-3 flex items-center gap-2">
-                  <Settings className="w-5 h-5" />
-                  输出设置
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      输出目录 (-o)
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={outputDir}
-                        onChange={(e) => setOutputDir(e.target.value)}
-                        placeholder="选择输出目录"
-                        className="input-field flex-1"
-                      />
-                      <button
-                        onClick={handleSelectOutput}
-                        className="btn-secondary whitespace-nowrap"
-                      >
-                        选择
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      忽略扩展名 (-i)
-                    </label>
-                    <input
-                      type="text"
-                      value={ignoreExts}
-                      onChange={(e) => setIgnoreExts(e.target.value)}
-                      placeholder="txt,log"
-                      className="input-field"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Conversion Options */}
-              <div>
-                <h3 className="text-lg font-medium mb-3">选项</h3>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={convertTex}
-                      onChange={(e) => setConvertTex(e.target.checked)}
-                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                    />
-                    <span className="text-sm">TEX 转图像 (-t)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={overwrite}
-                      onChange={(e) => setOverwrite(e.target.checked)}
-                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                    />
-                    <span className="text-sm">覆盖现有文件</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={justCopy}
-                      onChange={(e) => setJustCopy(e.target.checked)}
-                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                    />
-                    <span className="text-sm">仅原样复制文件夹 (不解包)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Advanced Options */}
-              <div>
-                <button
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
-                >
-                  <ChevronDown
-                    className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-                  />
-                  高级选项
-                </button>
-                {showAdvanced && (
-                  <div className="mt-3 space-y-2 p-3 bg-slate-50 rounded-lg">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={recursive}
-                        onChange={(e) => setRecursive(e.target.checked)}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm">递归搜索 (-r)</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={singleDir}
-                        onChange={(e) => setSingleDir(e.target.checked)}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm">单一目录 (-s)</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={useName}
-                        onChange={(e) => setUseName(e.target.checked)}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm">使用项目名称 (-n)</span>
-                    </label>
-                  </div>
+            {/* Execute Button */}
+            <div className="pt-4 shrink-0 border-t border-slate-100 mt-4">
+              <button
+                onClick={handleExtract}
+                disabled={(!isRunning && selectedIds.size === 0) || (!isRunning && !inputPath)}
+                className={`flex items-center gap-2 w-full justify-center py-3 shadow-md rounded-lg font-medium transition-all ${
+                  isRunning 
+                    ? 'bg-red-500 hover:bg-red-600 text-white' 
+                    : 'btn-primary'
+                }`}
+              >
+                {isRunning ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    停止提取
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5" />
+                    {selectedIds.size > 0 
+                      ? (justCopy ? `复制选中项 (${selectedIds.size})` : `解包选中项 (${selectedIds.size})`) 
+                      : (justCopy ? '开始执行复制' : '开始执行提取')}
+                  </>
                 )}
-              </div>
-
-              {/* Execute Button */}
-              <div className="pt-2">
-                <button
-                  onClick={handleExtract}
-                  disabled={(!isRunning && selectedIds.size === 0) || (!isRunning && !inputPath)}
-                  className={`flex items-center gap-2 w-full justify-center py-3 shadow-md rounded-lg font-medium transition-all ${
-                    isRunning 
-                      ? 'bg-red-500 hover:bg-red-600 text-white' 
-                      : 'btn-primary'
-                  }`}
-                >
-                  {isRunning ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      停止提取
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-5 h-5" />
-                      {selectedIds.size > 0 
-                        ? (justCopy ? `复制选中项 (${selectedIds.size})` : `解包选中项 (${selectedIds.size})`) 
-                        : (justCopy ? '开始执行复制' : '开始执行提取')}
-                    </>
-                  )}
-                </button>
-              </div>
+              </button>
             </div>
           </div>
         </div>
@@ -854,8 +856,39 @@ function ExtractView() {
 
       {/* Output Log - Simplified */}
       {output && (
-        <div className="card">
-          {/* ... */}
+        <div className="card shrink-0">
+          <h3 className="text-lg font-medium mb-4 flex items-center justify-between">
+            <span>提取进度</span>
+            <button 
+              onClick={() => setOutput('')}
+              className="text-xs text-slate-400 hover:text-slate-600 font-normal"
+            >
+              清除列表
+            </button>
+          </h3>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 max-h-40 overflow-y-auto custom-scrollbar">
+            <div className="flex flex-col gap-2">
+              {output.trim().split('\n').map((line, idx) => {
+                const isSuccess = line.includes('✅');
+                const isPending = line.includes('⏳');
+                const isStopped = line.includes('⏹️');
+                const parts = line.split(' - ');
+                const name = parts[0];
+                const status = parts[1] || '';
+                return (
+                  <div key={idx} className={`flex items-center justify-between p-2 rounded-md border ${
+                    isSuccess ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 
+                    isPending ? 'bg-amber-50 border-amber-100 text-amber-800' :
+                    isStopped ? 'bg-slate-100 border-slate-200 text-slate-600' :
+                    'bg-red-50 border-red-100 text-red-800'
+                  }`}>
+                    <span className="text-sm font-medium">{name}</span>
+                    <span className="text-xs font-bold">{status}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
