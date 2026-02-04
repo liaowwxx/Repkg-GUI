@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { FolderOpen, File, Play, Settings, ChevronDown, Check, Image as ImageIcon, Search, Filter, ChevronLeft, ChevronRight, X, Monitor, Heart, Bookmark, Plus, Trash2 } from 'lucide-react';
 import { useRepkg } from '../hooks/useRepkg';
+import { translations } from '../utils/i18n';
 
 const ITEMS_PER_PAGE = 32;
 
-function ExtractView() {
+function ExtractView({ lang }) {
+  const t = translations[lang];
   const [inputPath, setInputPath] = useState(() => localStorage.getItem('repkg-inputPath') || '');
   const [outputDir, setOutputDir] = useState(() => localStorage.getItem('repkg-outputDir') || '');
   const [ignoreExts, setIgnoreExts] = useState(() => localStorage.getItem('repkg-ignoreExts') || '');
@@ -200,13 +202,13 @@ function ExtractView() {
       }));
     } catch (err) {
       console.error('更新收藏夹失败:', err);
-      alert('操作失败: ' + err.message);
+      alert(`${t.operationFailed}: ${err.message}`);
     }
   };
 
   const handleDeleteCollection = async (collectionName) => {
     if (!collectionName || collectionName === 'all') return;
-    if (!confirm(`确定要删除收藏夹 "${collectionName}" 吗？这不会删除壁纸文件。`)) return;
+    if (!confirm(t.deleteCollectionConfirm.replace('{name}', collectionName))) return;
 
     try {
       const result = await window.electronAPI.deleteCollection({
@@ -251,7 +253,7 @@ function ExtractView() {
 
   const handleSetAsWallpaper = async (wp) => {
     if (!outputDir) {
-      alert('请先选择输出目录，以便创建 cache 文件夹');
+      alert(t.selectOutputDirFirst);
       return;
     }
     setIsSettingWallpaper(true);
@@ -265,7 +267,7 @@ function ExtractView() {
         const args = ['extract', '-o', wpCachePath, '-t', '-r', '--overwrite', inputPath];
         const result = await window.electronAPI.runRepkg(args);
         if (result.code !== 0 && result.code !== -1) {
-          throw new Error(`解包失败: ${result.stderr}`);
+          throw new Error(`${t.extractFailed}: ${result.stderr}`);
         }
       } else {
         await window.electronAPI.copyWallpaperAssets({ srcPath: wp.path, destDir: wpCachePath });
@@ -273,13 +275,13 @@ function ExtractView() {
 
       const assets = await window.electronAPI.getLargestAssets(wpCachePath);
       if (assets.length === 0) {
-        alert('未在解包目录中找到支持的视频或图片文件');
+        alert(t.noAssetsFound);
         return;
       }
       setAssetModal({ wp, assets });
     } catch (err) {
       console.error('设置壁纸流程出错:', err);
-      alert(`设置壁纸失败: ${err.message}`);
+      alert(`${t.operationFailed}: ${err.message}`);
     } finally {
       setIsSettingWallpaper(false);
     }
@@ -289,13 +291,13 @@ function ExtractView() {
     try {
       const result = await window.electronAPI.setWallpaper(asset.path, options);
       if (result.success) {
-        alert('壁纸设置成功！');
+        alert(t.setWallpaperSuccess);
         setAssetModal(null);
       } else {
-        alert(`设置失败: ${result.error}`);
+        alert(`${t.setWallpaperFailed}: ${result.error}`);
       }
     } catch (err) {
-      alert(`设置壁纸出错: ${err.message}`);
+      alert(`${t.operationFailed}: ${err.message}`);
     }
   };
 
@@ -306,7 +308,7 @@ function ExtractView() {
       return;
     }
     if (!inputPath) {
-      alert('请输入有效的输入路径');
+      alert(t.invalidInputPath);
       return;
     }
     const commonArgs = ['extract'];
@@ -330,10 +332,10 @@ function ExtractView() {
       for (const wp of selectedWallpapers) {
         if (stopRef.current) break;
         const displayName = sanitizePath(wp.title || wp.name);
-        setOutput(prev => prev + `${displayName} - ⏳ 正在提取...\n`);
+        setOutput(prev => prev + `${displayName} - ⏳ ${lang === 'zh' ? '正在提取...' : 'Extracting...'}\n`);
         if (justCopy) {
           const result = await window.electronAPI.copyDirectory({ srcPath: wp.path, destDir: outputDir, customName: displayName });
-          setOutput(prev => prev.replace(`${displayName} - ⏳ 正在提取...\n`, `${displayName} - ${result.success ? '✅ 提取成功' : '❌ 失败'}\n`));
+          setOutput(prev => prev.replace(`${displayName} - ⏳ ${lang === 'zh' ? '正在提取...' : 'Extracting...'}\n`, `${displayName} - ${result.success ? (lang === 'zh' ? '✅ 提取成功' : '✅ Success') : (lang === 'zh' ? '❌ 失败' : '❌ Failed')}\n`));
         } else if (wp.isPkg) {
           const targetDir = outputDir ? (singleDir ? outputDir : `${outputDir}/${displayName}`) : `${wp.path}/extracted`;
           const currentArgs = [...commonArgs];
@@ -343,7 +345,7 @@ function ExtractView() {
             else currentArgs.push('-o', targetDir);
           }
           const result = await window.electronAPI.runRepkg([...currentArgs, wp.path]);
-          setOutput(prev => prev.replace(`${displayName} - ⏳ 正在提取...\n`, `${displayName} - ${result.code === 0 ? '✅ 提取成功' : '❌ 失败'}\n`));
+          setOutput(prev => prev.replace(`${displayName} - ⏳ ${lang === 'zh' ? '正在提取...' : 'Extracting...'}\n`, `${displayName} - ${result.code === 0 ? (lang === 'zh' ? '✅ 提取成功' : '✅ Success') : (lang === 'zh' ? '❌ 失败' : '❌ Failed')}\n`));
         }
       }
       setIsRunning(false);
@@ -363,32 +365,32 @@ function ExtractView() {
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-bold flex items-center gap-2">
                     <ImageIcon className="w-5 h-5 text-primary-600" />
-                    壁纸预览 ({filteredWallpapers.length})
+                    {t.wallpaperPreview} ({filteredWallpapers.length})
                   </h2>
                   <button onClick={selectAll} className="text-xs font-bold text-primary-600 hover:text-primary-700">
-                    {selectedIds.size === filteredWallpapers.length && filteredWallpapers.length > 0 ? '取消全选' : '全选过滤项'}
+                    {selectedIds.size === filteredWallpapers.length && filteredWallpapers.length > 0 ? t.deselectAll : t.selectAll}
                   </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input type="text" placeholder="搜索..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="input-field pl-9 py-1 text-xs" />
+                    <input type="text" placeholder={t.search} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="input-field pl-9 py-1 text-xs" />
                   </div>
                   <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input-field py-1 text-xs">
-                    <option value="all">所有类型</option>
+                    <option value="all">{t.allTypes}</option>
                     {types.filter(t => t !== 'all').map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   <select value={ratingFilter} onChange={(e) => setRatingFilter(e.target.value)} className="input-field py-1 text-xs">
-                    <option value="all">所有分级</option>
+                    <option value="all">{t.allRatings}</option>
                     {ratings.filter(r => r !== 'all').map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                   <div className="flex gap-1">
                     <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} className="input-field py-1 text-xs flex-1">
-                      <option value="all">所有收藏夹</option>
+                      <option value="all">{t.allCollections}</option>
                       {allCollections.filter(c => c !== 'all').map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                     {collectionFilter !== 'all' && (
-                      <button onClick={() => handleDeleteCollection(collectionFilter)} title="删除当前收藏夹" className="p-1 text-red-500 hover:bg-red-50 rounded">
+                      <button onClick={() => handleDeleteCollection(collectionFilter)} title={lang === 'zh' ? '删除当前收藏夹' : 'Delete current collection'} className="p-1 text-red-500 hover:bg-red-50 rounded">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     )}
@@ -400,18 +402,18 @@ function ExtractView() {
                 {selectedIds.size > 0 && (
                   <div className="sticky top-0 z-20 bg-primary-600 text-white p-2 mb-3 rounded-lg flex items-center justify-between shadow-lg animate-in slide-in-from-top duration-200">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-bold">已选择 {selectedIds.size} 项</span>
+                      <span className="text-xs font-bold">{t.itemsSelected.replace('{count}', selectedIds.size)}</span>
                       <div className="h-4 w-px bg-white/30" />
                       <div className="flex items-center gap-1.5">
                         <button onClick={() => {
                           setCollectionModal({ show: true, ids: Array.from(selectedIds) });
                         }} className="flex items-center gap-1 text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-colors">
-                          <Plus className="w-3 h-3" /> 新建收藏
+                          <Plus className="w-3 h-3" /> {t.newCollectionAction}
                         </button>
                         {allCollections.filter(c => c !== 'all').length > 0 && (
                           <div className="relative group/menu">
                             <button className="flex items-center gap-1 text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-colors">
-                              <Bookmark className="w-3 h-3" /> 加入收藏 <ChevronDown className="w-3 h-3" />
+                              <Bookmark className="w-3 h-3" /> {t.addCollectionAction} <ChevronDown className="w-3 h-3" />
                             </button>
                             <div className="absolute top-full left-0 mt-1 hidden group-hover/menu:block bg-white border border-slate-200 shadow-xl rounded-lg py-1 min-w-[120px] text-slate-700">
                               {allCollections.filter(c => c !== 'all').map(c => (
@@ -424,7 +426,7 @@ function ExtractView() {
                         )}
                         {collectionFilter !== 'all' && (
                           <button onClick={() => handleUpdateCollections(Array.from(selectedIds), collectionFilter, 'remove')} className="flex items-center gap-1 text-[10px] bg-red-500/80 hover:bg-red-500 px-2 py-1 rounded transition-colors">
-                            <X className="w-3 h-3" /> 移出收藏
+                            <X className="w-3 h-3" /> {t.removeFromCollection}
                           </button>
                         )}
                       </div>
@@ -447,7 +449,7 @@ function ExtractView() {
                           </div>
                         )}
                       </div>
-                      {!wp.isPkg && <div className="absolute top-0 right-0 bg-amber-500 text-white text-[8px] px-1 py-0.5 rounded-bl-md font-bold">非PKG</div>}
+                      {!wp.isPkg && <div className="absolute top-0 right-0 bg-amber-500 text-white text-[8px] px-1 py-0.5 rounded-bl-md font-bold">{lang === 'zh' ? '非PKG' : 'Non-PKG'}</div>}
                       <div className="absolute inset-x-0 bottom-0 bg-black/50 p-1.5 transform translate-y-full group-hover:translate-y-0 transition-transform">
                         <p className="text-[10px] text-white truncate font-medium">{wp.title}</p>
                       </div>
@@ -459,7 +461,7 @@ function ExtractView() {
               
               {totalPages > 1 && (
                 <div className="mt-3 pt-3 border-t border-slate-50 flex items-center justify-between shrink-0">
-                  <div className="text-[10px] text-slate-400">第 {currentPage}/{totalPages} 页</div>
+                  <div className="text-[10px] text-slate-400">{t.pageInfo.replace('{current}', currentPage).replace('{total}', totalPages)}</div>
                   <div className="flex items-center gap-1">
                     <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-1 rounded border border-slate-100 disabled:opacity-20"><ChevronLeft className="w-4 h-4" /></button>
                     <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-1 rounded border border-slate-100 disabled:opacity-20"><ChevronRight className="w-4 h-4" /></button>
@@ -473,42 +475,42 @@ function ExtractView() {
         {/* Right Side: Settings */}
         <div className="lg:col-span-1 flex flex-col min-h-0">
           <div className="card h-full flex flex-col overflow-hidden">
-            <h2 className="text-base font-bold mb-3 shrink-0">提取设置</h2>
+            <h2 className="text-base font-bold mb-3 shrink-0">{t.extractSettings}</h2>
             <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-4">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1.5">输入路径</label>
-                <input type="text" value={inputPath} onChange={(e) => setInputPath(e.target.value)} placeholder="PKG目录" className="input-field w-full py-1.5 text-xs mb-2" />
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">{t.inputPath}</label>
+                <input type="text" value={inputPath} onChange={(e) => setInputPath(e.target.value)} placeholder={lang === 'zh' ? "PKG目录" : "PKG Directory"} className="input-field w-full py-1.5 text-xs mb-2" />
                 <div className="flex gap-2">
-                  <button onClick={handleSelectFile} className="btn-secondary flex-1 py-1.5 text-xs flex items-center justify-center gap-1"><File className="w-3.5 h-3.5" />文件</button>
-                  <button onClick={handleSelectFolder} className="btn-secondary flex-1 py-1.5 text-xs flex items-center justify-center gap-1"><FolderOpen className="w-3.5 h-3.5" />目录</button>
+                  <button onClick={handleSelectFile} className="btn-secondary flex-1 py-1.5 text-xs flex items-center justify-center gap-1"><File className="w-3.5 h-3.5" />{t.file}</button>
+                  <button onClick={handleSelectFolder} className="btn-secondary flex-1 py-1.5 text-xs flex items-center justify-center gap-1"><FolderOpen className="w-3.5 h-3.5" />{t.directory}</button>
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5"><Settings className="w-3.5 h-3.5" />输出设置</h3>
+                  <h3 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5"><Settings className="w-3.5 h-3.5" />{t.outputSettings}</h3>
                   <div className="space-y-3">
                     <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">输出目录</label>
+                      <label className="block text-[10px] text-slate-400 mb-1">{t.outputDir}</label>
                       <div className="flex gap-1.5">
                         <input type="text" value={outputDir} onChange={(e) => setOutputDir(e.target.value)} className="input-field flex-1 py-1.5 text-xs" />
-                        <button onClick={handleSelectOutput} className="btn-secondary py-1 text-xs px-2">选择</button>
+                        <button onClick={handleSelectOutput} className="btn-secondary py-1 text-xs px-2">{t.select}</button>
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[10px] text-slate-400 mb-1">忽略扩展名</label>
+                      <label className="block text-[10px] text-slate-400 mb-1">{t.ignoreExts}</label>
                       <input type="text" value={ignoreExts} onChange={(e) => setIgnoreExts(e.target.value)} className="input-field py-1.5 text-xs" />
                     </div>
                   </div>
                 </div>
 
                 <div className="pt-2 border-t border-slate-50">
-                  <h3 className="text-xs font-bold text-slate-700 mb-2">选项</h3>
+                  <h3 className="text-xs font-bold text-slate-700 mb-2">{t.options}</h3>
                   <div className="space-y-1.5">
                     {[
-                      { label: 'TEX 转图像', state: convertTex, set: setConvertTex },
-                      { label: '覆盖现有文件', state: overwrite, set: setOverwrite },
-                      { label: '仅原样复制', state: justCopy, set: setJustCopy }
+                      { label: t.convertTex, state: convertTex, set: setConvertTex },
+                      { label: t.overwrite, state: overwrite, set: setOverwrite },
+                      { label: t.justCopy, state: justCopy, set: setJustCopy }
                     ].map(opt => (
                       <label key={opt.label} className="flex items-center gap-2 cursor-pointer py-0.5">
                         <input type="checkbox" checked={opt.state} onChange={e => opt.set(e.target.checked)} className="w-3.5 h-3.5 text-primary-600 rounded" />
@@ -520,14 +522,14 @@ function ExtractView() {
 
                 <div className="pt-2">
                   <button onClick={() => setShowAdvanced(!showAdvanced)} className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                    <ChevronDown className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} /> 高级选项
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} /> {t.advancedOptions}
                   </button>
                   {showAdvanced && (
                     <div className="mt-2 space-y-1.5 p-2 bg-slate-50 rounded-md">
                       {[
-                        { label: '递归搜索 (-r)', state: recursive, set: setRecursive },
-                        { label: '单一目录 (-s)', state: singleDir, set: setSingleDir },
-                        { label: '使用项目名称 (-n)', state: useName, set: setUseName }
+                        { label: t.recursive, state: recursive, set: setRecursive },
+                        { label: t.singleDir, state: singleDir, set: setSingleDir },
+                        { label: t.useName, state: useName, set: setUseName }
                       ].map(opt => (
                         <label key={opt.label} className="flex items-center gap-2 cursor-pointer">
                           <input type="checkbox" checked={opt.state} onChange={e => opt.set(e.target.checked)} className="w-3 h-3 text-primary-600 rounded" />
@@ -543,7 +545,7 @@ function ExtractView() {
             <div className="pt-3 shrink-0 border-t border-slate-100 mt-3">
               <button onClick={handleExtract} disabled={(!isRunning && selectedIds.size === 0 && !inputPath)}
                 className={`flex items-center gap-2 w-full justify-center py-2.5 shadow-sm rounded-lg text-sm font-bold transition-all ${isRunning ? 'bg-red-500 text-white' : 'btn-primary'}`}>
-                {isRunning ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />停止</> : <><Play className="w-4 h-4" />{selectedIds.size > 0 ? `解包 (${selectedIds.size})` : '执行'}</>}
+                {isRunning ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />{t.stop}</> : <><Play className="w-4 h-4" />{selectedIds.size > 0 ? `${t.extract} (${selectedIds.size})` : t.execute}</>}
               </button>
             </div>
           </div>
@@ -553,8 +555,8 @@ function ExtractView() {
       {output && (
         <div className="card shrink-0 py-2 px-4 border-t-4 border-primary-500">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">提取进度</span>
-            <button onClick={() => setOutput('')} className="text-[10px] text-slate-400 hover:text-slate-600">清除</button>
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t.progress}</span>
+            <button onClick={() => setOutput('')} className="text-[10px] text-slate-400 hover:text-slate-600">{t.clear}</button>
           </div>
           <div className="max-h-24 overflow-y-auto custom-scrollbar text-[10px] space-y-1">
             {output.trim().split('\n').map((line, idx) => {
@@ -571,8 +573,8 @@ function ExtractView() {
         </div>
       )}
 
-      {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} wp={contextMenu.wp} allCollections={allCollections} onOpenFolder={() => handleOpenFolder(contextMenu.wp)} onSetAsWallpaper={() => handleSetAsWallpaper(contextMenu.wp)} onUpdateCollections={handleUpdateCollections} onOpenNewCollection={() => setCollectionModal({ show: true, ids: [contextMenu.wp.id] })} />}
-      {assetModal && <AssetModal wp={assetModal.wp} assets={assetModal.assets} onClose={() => setAssetModal(null)} onSelect={selectAssetAsWallpaper} />}
+      {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} wp={contextMenu.wp} allCollections={allCollections} onOpenFolder={() => handleOpenFolder(contextMenu.wp)} onSetAsWallpaper={() => handleSetAsWallpaper(contextMenu.wp)} onUpdateCollections={handleUpdateCollections} onOpenNewCollection={() => setCollectionModal({ show: true, ids: [contextMenu.wp.id] })} lang={lang} />}
+      {assetModal && <AssetModal wp={assetModal.wp} assets={assetModal.assets} onClose={() => setAssetModal(null)} onSelect={selectAssetAsWallpaper} lang={lang} />}
       {collectionModal.show && (
         <NewCollectionModal 
           onClose={() => setCollectionModal({ show: false, ids: [] })} 
@@ -580,20 +582,22 @@ function ExtractView() {
             handleUpdateCollections(collectionModal.ids, name, 'add');
             setCollectionModal({ show: false, ids: [] });
           }} 
+          lang={lang}
         />
       )}
-      {isSettingWallpaper && <div className="fixed inset-0 z-[100] bg-white/60 backdrop-blur-[2px] flex items-center justify-center"><div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center gap-4"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div><p className="text-sm font-medium text-slate-700">正在准备壁纸资源...</p></div></div>}
+      {isSettingWallpaper && <div className="fixed inset-0 z-[100] bg-white/60 backdrop-blur-[2px] flex items-center justify-center"><div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center gap-4"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div><p className="text-sm font-medium text-slate-700">{t.preparingResources}</p></div></div>}
     </div>
   );
 }
 
-function ContextMenu({ x, y, wp, allCollections, onOpenFolder, onSetAsWallpaper, onUpdateCollections, onOpenNewCollection }) {
+function ContextMenu({ x, y, wp, allCollections, onOpenFolder, onSetAsWallpaper, onUpdateCollections, onOpenNewCollection, lang }) {
+  const t = translations[lang];
   const [showCollections, setShowCollections] = useState(false);
   
   return (
     <div className="fixed z-50 bg-white border border-slate-200 shadow-xl rounded-lg py-1 min-w-[180px] animate-in fade-in zoom-in duration-100" style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>
-      <button onClick={onOpenFolder} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"><FolderOpen className="w-4 h-4" />打开壁纸文件夹</button>
-      <button onClick={onSetAsWallpaper} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"><Monitor className="w-4 h-4" />设置为桌面壁纸</button>
+      <button onClick={onOpenFolder} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"><FolderOpen className="w-4 h-4" />{t.openFolder}</button>
+      <button onClick={onSetAsWallpaper} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"><Monitor className="w-4 h-4" />{t.setAsWallpaper}</button>
       
       <div className="h-px bg-slate-100 my-1" />
       
@@ -602,7 +606,7 @@ function ContextMenu({ x, y, wp, allCollections, onOpenFolder, onSetAsWallpaper,
           onMouseEnter={() => setShowCollections(true)}
           className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center justify-between gap-2"
         >
-          <div className="flex items-center gap-2"><Bookmark className="w-4 h-4" />加入收藏夹</div>
+          <div className="flex items-center gap-2"><Bookmark className="w-4 h-4" />{t.addToCollection}</div>
           <ChevronRight className="w-3 h-3" />
         </button>
         
@@ -615,7 +619,7 @@ function ContextMenu({ x, y, wp, allCollections, onOpenFolder, onSetAsWallpaper,
               onClick={onOpenNewCollection}
               className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"
             >
-              <Plus className="w-4 h-4" /> 新建收藏夹...
+              <Plus className="w-4 h-4" /> {t.newCollection}
             </button>
             
             {allCollections.filter(c => c !== 'all').length > 0 && <div className="h-px bg-slate-100 my-1" />}
@@ -643,7 +647,8 @@ function ContextMenu({ x, y, wp, allCollections, onOpenFolder, onSetAsWallpaper,
   );
 }
 
-function AssetModal({ wp, assets, onClose, onSelect }) {
+function AssetModal({ wp, assets, onClose, onSelect, lang }) {
+  const t = translations[lang];
   const [isMuted, setIsMuted] = useState(true);
   const formatSize = (bytes) => {
     if (bytes === 0) return '0 B';
@@ -662,8 +667,8 @@ function AssetModal({ wp, assets, onClose, onSelect }) {
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
           <div>
-            <h3 className="text-xl font-bold text-slate-900">选择壁纸文件</h3>
-            <p className="text-sm text-slate-500 mt-1">从解包的文件中选择一个</p>
+            <h3 className="text-xl font-bold text-slate-900">{t.selectWallpaperFile}</h3>
+            <p className="text-sm text-slate-500 mt-1">{t.chooseOneAsset}</p>
           </div>
           <div className="flex items-center gap-6">
             <label className="flex items-center gap-2 cursor-pointer group">
@@ -673,7 +678,7 @@ function AssetModal({ wp, assets, onClose, onSelect }) {
                 onChange={(e) => setIsMuted(e.target.checked)}
                 className="w-4 h-4 text-primary-600 rounded border-slate-300 focus:ring-primary-500" 
               />
-              <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">静音播放视频</span>
+              <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">{t.muteVideo}</span>
             </label>
             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-6 h-6 text-slate-400" /></button>
           </div>
@@ -689,18 +694,19 @@ function AssetModal({ wp, assets, onClose, onSelect }) {
                   <p className="text-lg font-bold text-slate-900 truncate">{asset.name}</p>
                   <div className="flex items-center gap-3 mt-2"><span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span><span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span></div>
                 </div>
-                <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">应用为壁纸</button></div>
+                <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">{t.applyAsWallpaper}</button></div>
               </div>
             ))}
           </div>
         </div>
-        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center shrink-0"><p className="text-xs text-slate-400 italic">缓存文件夹将在退出软件时自动清除</p></div>
+        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center shrink-0"><p className="text-xs text-slate-400 italic">{t.cacheWarning}</p></div>
       </div>
     </div>
   );
 }
 
-function NewCollectionModal({ onClose, onConfirm }) {
+function NewCollectionModal({ onClose, onConfirm, lang }) {
+  const t = translations[lang];
   const [name, setName] = useState('');
   
   const handleSubmit = (e) => {
@@ -715,18 +721,18 @@ function NewCollectionModal({ onClose, onConfirm }) {
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200">
         <form onSubmit={handleSubmit} className="p-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-4">新建收藏夹</h3>
+          <h3 className="text-lg font-bold text-slate-900 mb-4">{t.newCollectionAction}</h3>
           <input 
             autoFocus
             type="text" 
             value={name} 
             onChange={(e) => setName(e.target.value)}
-            placeholder="收藏夹名称..." 
+            placeholder={`${t.newCollection}...`} 
             className="input-field mb-6"
           />
           <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1 py-2">取消</button>
-            <button type="submit" disabled={!name.trim()} className="btn-primary flex-1 py-2">确定</button>
+            <button type="button" onClick={onClose} className="btn-secondary flex-1 py-2">{t.cancel}</button>
+            <button type="submit" disabled={!name.trim()} className="btn-primary flex-1 py-2">{t.confirm}</button>
           </div>
         </form>
       </div>

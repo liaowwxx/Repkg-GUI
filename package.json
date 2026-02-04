@@ -1,6 +1,6 @@
 {
   "name": "repkg-webui",
-  "version": "2.0.0",
+  "version": "2.4.1",
   "description": "RePKG WebUI",
   "main": "electron/main.js",
   "type": "module",
@@ -13,7 +13,12 @@
     "electron:build": "vite build && electron-builder",
     "electron:build:mac": "vite build && electron-builder --mac",
     "electron:build:win": "vite build && electron-builder --win --x64",
-    "electron:build:win64": "vite build && electron-builder --win --x64"
+    "electron:build:win64": "vite build && electron-builder --win --x64",
+    "version:current": "node -p \"require('./package.json').version\"",
+    "version:set": "node scripts/version.js set",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version"
   },
   "keywords": [
     "repkg",
