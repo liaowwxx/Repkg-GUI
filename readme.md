@@ -8,8 +8,10 @@
 
 </div>
 
-<img width="1312" height="1000" alt="截屏2026-01-29 11 52 15" src="https://github.com/user-attachments/assets/e9d2ee6a-ae2a-4e12-8fa5-e522651a2f89" />
-<img width="1052" height="588" alt="截屏2026-02-01 00 20 40" src="https://github.com/user-attachments/assets/c570fb01-4a28-4799-b43f-02ca9b9fce87" />
+<img width="1214" height="874" alt="截屏2026-02-04 20 39 26" src="https://github.com/user-attachments/assets/5acd8def-fda7-4bf3-988b-56571e93ae46" />
+<img width="1214" height="874" alt="截屏2026-02-04 20 39 49" src="https://github.com/user-attachments/assets/b724415d-5230-4c1a-84c4-1865b510c2c6" />
+
+
 
 ## ✨ 核心特性
 
