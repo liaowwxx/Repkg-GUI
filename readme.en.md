@@ -10,8 +10,10 @@ This is a modern graphical interface developed for the [RePKG](https://github.co
 
 </div>
 
-<img width="1312" height="1000" alt="Screenshot 2026-01-29 11 52 15" src="https://github.com/user-attachments/assets/e9d2ee6a-ae2a-4e12-8fa5-e522651a2f89" />
-<img width="1052" height="588" alt="Screenshot 2026-02-01 00 20 40" src="https://github.com/user-attachments/assets/c570fb01-4a28-4799-b43f-02ca9b9fce87" />
+<img width="1214" height="874" alt="截屏2026-02-04 20 37 31" src="https://github.com/user-attachments/assets/62ffea77-b053-46ba-8b26-9c88b4ee7b35" />
+<img width="1214" height="874" alt="截屏2026-02-04 20 37 53" src="https://github.com/user-attachments/assets/b85dab81-4bde-4e67-9f9a-013fb5e0d79f" />
+
+
 
 ## ✨ Core Features
 
