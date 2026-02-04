@@ -8,6 +8,14 @@ import fs from 'fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// 优化 Chromium 渲染性能，解决 "tile memory limits exceeded" 警告
+app.commandLine.appendSwitch('max-tiles-for-interest-area', '512');
+app.commandLine.appendSwitch('num-raster-threads', '4');
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+}
+
 const IS_MAC = process.platform === 'darwin';
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -454,6 +462,7 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
               pkgPath: hasPkg ? path.join(subPath, pkgFile) : null, // 记录具体的 pkg 路径
               preview: previewUrl,
               isPkg: hasPkg,
+              collections: projectInfo.repkgcollection || [],
             };
 
             // 发送单个壁纸发现事件
@@ -618,8 +627,74 @@ ipcMain.handle('get-largest-assets', async (event, dirPath) => {
   }
 });
 
-ipcMain.handle('set-wallpaper', async (event, filePath) => {
+ipcMain.handle('update-wallpaper-collections', async (event, { wallpaperPaths, collectionName, action }) => {
+  const results = [];
+  for (const wpPath of wallpaperPaths) {
+    const projectJsonPath = path.join(wpPath, 'project.json');
+    if (!fs.existsSync(projectJsonPath)) {
+      results.push({ path: wpPath, success: false, error: 'project.json 不存在' });
+      continue;
+    }
+
+    try {
+      const content = fs.readFileSync(projectJsonPath, 'utf8');
+      const projectInfo = JSON.parse(content);
+      let collections = projectInfo.repkgcollection || [];
+
+      if (action === 'add') {
+        if (!collections.includes(collectionName)) {
+          collections.push(collectionName);
+        }
+      } else if (action === 'remove') {
+        collections = collections.filter(c => c !== collectionName);
+      } else if (action === 'set') {
+        // action 'set' can be used for renaming or resetting
+        // but for now let's focus on add/remove as requested
+      }
+
+      projectInfo.repkgcollection = collections;
+      fs.writeFileSync(projectJsonPath, JSON.stringify(projectInfo, null, 2), 'utf8');
+      results.push({ path: wpPath, success: true, collections });
+    } catch (err) {
+      console.error(`更新 project.json 失败 (${wpPath}):`, err);
+      results.push({ path: wpPath, success: false, error: err.message });
+    }
+  }
+  return results;
+});
+
+ipcMain.handle('delete-collection', async (event, { rootPath, collectionName }) => {
+  if (!rootPath || !fs.existsSync(rootPath)) return { success: false, error: '根路径不存在' };
+  
+  try {
+    const entries = fs.readdirSync(rootPath, { withFileTypes: true });
+    let updatedCount = 0;
+    
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const projectJsonPath = path.join(rootPath, entry.name, 'project.json');
+        if (fs.existsSync(projectJsonPath)) {
+          const content = fs.readFileSync(projectJsonPath, 'utf8');
+          const projectInfo = JSON.parse(content);
+          if (projectInfo.repkgcollection && projectInfo.repkgcollection.includes(collectionName)) {
+            projectInfo.repkgcollection = projectInfo.repkgcollection.filter(c => c !== collectionName);
+            fs.writeFileSync(projectJsonPath, JSON.stringify(projectInfo, null, 2), 'utf8');
+            updatedCount++;
+          }
+        }
+      }
+    }
+    return { success: true, updatedCount };
+  } catch (err) {
+    console.error('删除收藏夹出错:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('set-wallpaper', async (event, filePath, options = {}) => {
   if (!filePath || !fs.existsSync(filePath)) return { success: false, error: '文件不存在' };
+  
+  const { isMuted = false } = options;
   
   if (IS_MAC) {
     // 无论设置什么类型的壁纸，都先停止当前正在运行的视频壁纸进程
@@ -641,8 +716,13 @@ ipcMain.handle('set-wallpaper', async (event, filePath) => {
           return { success: false, error: '找不到视频壁纸播放组件，请检查 resources/bin/WallpaperPlayer 是否存在' };
         }
 
-        console.log('启动视频壁纸播放器:', playerPath, '视频:', filePath);
-        currentWallpaperProcess = spawn(playerPath, [filePath]);
+        const args = [filePath];
+        if (isMuted) {
+          args.push('--mute');
+        }
+
+        console.log('启动视频壁纸播放器:', playerPath, '视频:', filePath, '静音:', isMuted);
+        currentWallpaperProcess = spawn(playerPath, args);
         
         currentWallpaperProcess.on('error', (err) => {
           console.error('视频壁纸播放器启动错误:', err);
