@@ -6,7 +6,7 @@ This is a modern graphical interface developed for the [RePKG](https://github.co
 
 <div align="center">
 
-[English](readme.md) | **简体中文**
+[简体中文](readme.md) | **English**
 
 </div>
 
