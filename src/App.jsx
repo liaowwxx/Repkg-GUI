@@ -62,7 +62,7 @@ function App() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">{t.title}</h1>
-              <p className="text-sm text-slate-500">v2.4.0</p>
+              <p className="text-sm text-slate-500">{t.beta}</p>
             </div>
           </div>
 

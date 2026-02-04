@@ -1,7 +1,7 @@
 {
-  "name": "repkg-webui",
+  "name": "repkg-toolbox",
   "version": "2.4.1",
-  "description": "RePKG WebUI",
+  "description": "RePKG Toolbox",
   "main": "electron/main.js",
   "type": "module",
   "scripts": {

@@ -1,6 +1,6 @@
 export const translations = {
   zh: {
-    title: "RePKG WebUI",
+    title: "RePKG工具箱",
     beta: "测试版",
     loading: "正在加载...",
     // ExtractView
@@ -87,7 +87,7 @@ export const translations = {
     electronOnly: "功能仅在 Electron 环境中可用",
   },
   en: {
-    title: "RePKG WebUI",
+    title: "RePKG Toolbox",
     beta: "Beta",
     loading: "Loading...",
     // ExtractView
