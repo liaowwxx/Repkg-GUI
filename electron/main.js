@@ -4,6 +4,13 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import os from 'os';
 import fs from 'fs';
+import sharp from 'sharp';
+import { pipeline, env } from '@xenova/transformers';
+import axios from 'axios';
+
+// 配置 transformers 缓存和本地模型路径
+env.allowLocalModels = true;
+env.allowRemoteModels = true;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -313,7 +320,464 @@ app.on('window-all-closed', () => {
   }
 });
 
-// IPC 处理程序
+// --- 自然语言搜索支持变量 ---
+let embeddingPipeline = null;
+let vectorCache = []; // { id, path, vector, description }
+let currentDBPath = null; // 记录当前加载的 DB 路径
+
+// 辅助函数：加载嵌入模型
+async function loadEmbeddingModel(modelPath) {
+  if (embeddingPipeline) return embeddingPipeline;
+  
+  // 更加健壮的本地路径判断：只要是绝对路径或者存在的路径
+  const isLocalPath = modelPath && (path.isAbsolute(modelPath) || fs.existsSync(modelPath));
+  
+  // 备份原始设置
+  const oldRemoteModels = env.allowRemoteModels;
+  const oldLocalPath = env.localModelPath;
+
+  try {
+    if (isLocalPath) {
+      console.log('正在强制从本地路径加载模型:', modelPath);
+      
+      // 彻底禁用远程连接
+      env.allowRemoteModels = false;
+      env.local_files_only = true; 
+      
+      // 解决路径拼接问题的核心：将 localModelPath 设为模型所在的父目录
+      const absolutePath = path.resolve(modelPath);
+      const modelDir = path.dirname(absolutePath);
+      const modelName = path.basename(absolutePath);
+      
+      env.localModelPath = modelDir;
+      
+      console.log('Transformers 运行环境配置:', {
+        localModelPath: env.localModelPath,
+        allowRemoteModels: env.allowRemoteModels,
+        modelName: modelName
+      });
+
+      embeddingPipeline = await pipeline('feature-extraction', modelName);
+    } else {
+      const modelId = modelPath || 'Xenova/all-MiniLM-L6-v2';
+      console.log('网络加载模式:', modelId);
+      env.allowRemoteModels = true;
+      env.local_files_only = false;
+      embeddingPipeline = await pipeline('feature-extraction', modelId);
+    }
+    return embeddingPipeline;
+  } catch (err) {
+    console.error('模型加载失败详情:', err);
+    throw err;
+  } finally {
+    // 恢复全局环境设置
+    env.allowRemoteModels = oldRemoteModels;
+    env.local_files_only = false;
+    env.localModelPath = oldLocalPath;
+  }
+}
+
+// 辅助函数：处理图片为 LLM 可用的 base64
+async function processImageForLLM(imagePath) {
+  try {
+    const ext = path.extname(imagePath).toLowerCase();
+    let buffer;
+    
+    if (ext === '.gif') {
+      // GIF 取第一帧
+      buffer = await sharp(imagePath, { animated: false })
+        .toFormat('png')
+        .resize(512, 512, { fit: 'inside' })
+        .toBuffer();
+    } else {
+      buffer = await sharp(imagePath)
+        .resize(512, 512, { fit: 'inside' })
+        .toBuffer();
+    }
+    
+    return buffer.toString('base64');
+  } catch (err) {
+    console.error('图片预处理失败:', imagePath, err);
+    return null;
+  }
+}
+
+// 辅助函数：调用 LLM
+async function callLLM(providerUrl, apiKey, model, prompt, base64Image, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      // 按照 OpenAI 标准协议，providerUrl 作为 base_url，拼接 /chat/completions
+      const response = await axios.post(`${providerUrl}/chat/completions`, {
+        model: model,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/png;base64,${base64Image}`
+                }
+              },
+              {
+                type: "text",
+                text: prompt
+              }
+            ]
+          }
+        ],
+        max_tokens: 300
+      }, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity
+      });
+      
+      // 按照 OpenAI 标准解析返回结果
+      if (response.data && response.data.choices && response.data.choices[0].message) {
+        return response.data.choices[0].message.content;
+      }
+      
+      // 兼容某些特殊格式
+      if (response.data && response.data.content && Array.isArray(response.data.content)) {
+        const textItem = response.data.content.find(item => item.type === 'text');
+        if (textItem) return textItem.text;
+      }
+
+      throw new Error('无法解析 LLM 返回内容');
+    } catch (err) {
+      const isNetworkError = err.code === 'EPIPE' || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT';
+      if (isNetworkError && i < retries - 1) {
+        console.warn(`LLM 调用失败 (${err.code}), 正在进行第 ${i + 1} 次重试...`);
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 等待 2 秒后重试
+        continue;
+      }
+      console.error('LLM 调用最终失败:', err.response?.data || err.message);
+      throw err;
+    }
+  }
+}
+
+// 辅助函数：余弦相似度
+function cosineSimilarity(vecA, vecB) {
+  let dotProduct = 0;
+  let mA = 0;
+  let mB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    mA += vecA[i] * vecA[i];
+    mB += vecB[i] * vecB[i];
+  }
+  mA = Math.sqrt(mA);
+  mB = Math.sqrt(mB);
+  if (mA === 0 || mB === 0) return 0;
+  return dotProduct / (mA * mB);
+}
+
+// --- IPC 处理程序 ---
+
+ipcMain.handle('check-nl-status', async (event, dirPath) => {
+  if (!dirPath || !fs.existsSync(dirPath)) return { total: 0, processed: 0, needsUpdate: true };
+  
+  // 如果路径变了，清空缓存并尝试从新路径加载
+  const dbPath = path.join(dirPath, 'repkg_vectors.json');
+  if (currentDBPath !== dbPath) {
+    vectorCache = [];
+    currentDBPath = dbPath;
+    if (fs.existsSync(dbPath)) {
+      try {
+        vectorCache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+      } catch (e) {
+        console.error('加载向量库失败:', e);
+      }
+    }
+  }
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  let total = 0;
+  let processed = 0;
+  
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const projectJsonPath = path.join(dirPath, entry.name, 'project.json');
+      const hasPreview = fs.existsSync(path.join(dirPath, entry.name, 'preview.jpg')) || 
+                        fs.existsSync(path.join(dirPath, entry.name, 'preview.png')) || 
+                        fs.existsSync(path.join(dirPath, entry.name, 'preview.gif'));
+      
+      if (hasPreview) {
+        total++;
+        if (fs.existsSync(projectJsonPath)) {
+          try {
+            const content = JSON.parse(fs.readFileSync(projectJsonPath, 'utf8'));
+            if (content.preview_description && content.preview_description.trim().length > 0) {
+              processed++;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+  }
+  
+  const dbExists = fs.existsSync(dbPath);
+  
+  return { 
+    total, 
+    processed, 
+    needsUpdate: !dbExists || processed < total,
+    isDBLoaded: vectorCache.length > 0
+  };
+});
+
+ipcMain.handle('update-nl-db', async (event, { dirPath, config }) => {
+  const { llmProvider, llmApiKey, llmModel, embeddingModelPath } = config;
+  const prompt = "用一段50字左右的话描述图片中的内容，包括主体，动作，风格等。";
+  
+  if (!dirPath || !fs.existsSync(dirPath)) return { success: false, error: '路径不存在' };
+
+  try {
+    // 1. 扫描并补充 LLM 描述
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const tasks = [];
+    
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const wpPath = path.join(dirPath, entry.name);
+        const projectJsonPath = path.join(wpPath, 'project.json');
+        
+        let previewFile = null;
+        for (const f of ['preview.jpg', 'preview.png', 'preview.gif']) {
+          if (fs.existsSync(path.join(wpPath, f))) {
+            previewFile = path.join(wpPath, f);
+            break;
+          }
+        }
+        
+        if (previewFile) {
+          let projectInfo = {};
+          if (fs.existsSync(projectJsonPath)) {
+            try { projectInfo = JSON.parse(fs.readFileSync(projectJsonPath, 'utf8')); } catch (e) {}
+          }
+          
+          if (!projectInfo.preview_description) {
+            tasks.push({ wpPath, projectJsonPath, previewFile, projectInfo });
+          }
+        }
+      }
+    }
+
+    // 并行处理描述 (限制并发)
+    const totalTasks = tasks.length;
+    let completedTasks = 0;
+    const batchSize = 10;
+    
+    for (let i = 0; i < tasks.length; i += batchSize) {
+      const batch = tasks.slice(i, i + batchSize);
+      await Promise.all(batch.map(async (task) => {
+        try {
+          const base64 = await processImageForLLM(task.previewFile);
+          if (base64) {
+            const description = await callLLM(llmProvider, llmApiKey, llmModel, prompt, base64);
+            task.projectInfo.preview_description = description;
+            fs.writeFileSync(task.projectJsonPath, JSON.stringify(task.projectInfo, null, 2));
+          }
+        } catch (err) {
+          console.error(`处理 ${task.wpPath} 失败:`, err.message);
+        }
+        completedTasks++;
+        event.sender.send('nl-progress', { total: totalTasks, processed: completedTasks, task: 'LLM 描述生成中...' });
+      }));
+      // 在每批（10个）请求之间休息 500ms，减轻服务器瞬间压力
+      if (i + batchSize < tasks.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    // 2. 构建向量库
+    event.sender.send('nl-progress', { total: 100, processed: 0, task: '加载嵌入模型...' });
+    
+    await loadEmbeddingModel(embeddingModelPath);
+
+    const allWps = [];
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const projectJsonPath = path.join(dirPath, entry.name, 'project.json');
+        if (fs.existsSync(projectJsonPath)) {
+          try {
+            const content = JSON.parse(fs.readFileSync(projectJsonPath, 'utf8'));
+            if (content.preview_description) {
+              // 获取标题，如果没有则使用文件夹名
+              const title = content.title || entry.name;
+              // 构造加权文本：标题重复 2 次 + 描述
+              // 格式: "标题 标题 描述内容"
+              const weightedText = `${title} ${title} ${content.preview_description}`;
+              allWps.push({ id: entry.name, description: weightedText });
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    const vectors = [];
+    for (let i = 0; i < allWps.length; i++) {
+      const wp = allWps[i];
+      const output = await embeddingPipeline(wp.description, { pooling: 'mean', normalize: true });
+      vectors.push({
+        id: wp.id,
+        vector: Array.from(output.data),
+        description: wp.description
+      });
+      event.sender.send('nl-progress', { total: allWps.length, processed: i + 1, task: '向量化处理中...' });
+    }
+
+    const dbPath = path.join(dirPath, 'repkg_vectors.json');
+    fs.writeFileSync(dbPath, JSON.stringify(vectors));
+    vectorCache = vectors;
+
+    return { success: true };
+  } catch (err) {
+    console.error('构建向量库失败:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('vector-search', async (event, { query, topK, dirPath, embeddingModelPath }) => {
+  if (!embeddingPipeline || vectorCache.length === 0) {
+    // 尝试加载
+    const dbPath = path.join(dirPath, 'repkg_vectors.json');
+    if (fs.existsSync(dbPath)) {
+      vectorCache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    } else {
+      return { success: false, error: '向量库未构建' };
+    }
+    
+    if (!embeddingPipeline) {
+      await loadEmbeddingModel(embeddingModelPath);
+    }
+  }
+
+  try {
+    const output = await embeddingPipeline(query, { pooling: 'mean', normalize: true });
+    const queryVector = Array.from(output.data);
+    
+    const results = vectorCache.map(item => ({
+      id: item.id,
+      score: cosineSimilarity(queryVector, item.vector)
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK);
+    
+    return { success: true, results };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('rerank-results', async (event, { query, candidates, config }) => {
+  const { llmProvider, llmApiKey, llmModel } = config;
+  
+  // 构造 Rerank Prompt
+  const itemsList = candidates.map(c => `ID: ${c.id}\n标题: ${c.title}\n描述: ${c.preview_description}`).join('\n\n---\n\n');
+  
+  const prompt = `
+你是一个非常严格的壁纸检索专家。你的唯一任务是：根据用户搜索词 "${query}"，从下面的候选壁纸列表中挑选出最匹配的壁纸 ID。
+
+严格规则：
+1. 只输出壁纸 ID，用英文逗号分隔（,），不要加空格或其他字符。
+2. 严格按照相关度从高到低排序。
+3. 必须完全或高度匹配搜索词描述的所有关键元素（场景、氛围、主体、风格、时间、颜色等）。如果某个元素明显不符（如搜索“城市中的少年”，但壁纸是“森林里的少年”），直接排除。
+4. 如果没有完全匹配的壁纸，最多返回最接近的 3–5 个 ID。
+5. 如果没有任何壁纸相关，输出空字符串（什么都不输出）。
+6. 禁止输出任何解释、理由、JSON、括号、编号、换行或其他文字，只输出 ID 列表或空。
+
+候选壁纸列表：
+${itemsList}
+
+输出格式示例：
+ID1, ID2, ID3
+`;
+
+  try {
+    // 复用之前的 axios 调用逻辑，但这次不需要图片
+    const response = await axios.post(`${llmProvider}/chat/completions`, {
+      model: llmModel,
+      messages: [
+        { role: "system", content: "你是一个专业的搜索结果排序助手，只输出结果 ID 列表。" },
+        { role: "user", content: prompt }
+      ],
+      max_tokens: 500
+    }, {
+      headers: {
+        'Authorization': `Bearer ${llmApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 30000
+    });
+
+    let content = "";
+    if (response.data && response.data.choices && response.data.choices[0].message) {
+      content = response.data.choices[0].message.content;
+    } else if (response.data && response.data.content) {
+      const textItem = response.data.content.find(item => item.type === 'text');
+      content = textItem ? textItem.text : "";
+    }
+
+    // 解析 ID 列表
+    const rerankedIds = content.split(/[,，\n]/)
+      .map(id => id.trim())
+      .filter(id => id && candidates.some(c => c.id === id));
+
+    return { success: true, results: rerankedIds };
+  } catch (err) {
+    console.error('Rerank 失败:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('clear-nl-descriptions', async (event, dirPath) => {
+  if (!dirPath || !fs.existsSync(dirPath)) return { success: false, error: '路径不存在' };
+  
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    let clearedCount = 0;
+    
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const projectJsonPath = path.join(dirPath, entry.name, 'project.json');
+        if (fs.existsSync(projectJsonPath)) {
+          try {
+            const content = fs.readFileSync(projectJsonPath, 'utf8');
+            const projectInfo = JSON.parse(content);
+            if (projectInfo.preview_description) {
+              delete projectInfo.preview_description;
+              fs.writeFileSync(projectJsonPath, JSON.stringify(projectInfo, null, 2), 'utf8');
+              clearedCount++;
+            }
+          } catch (err) {
+            console.error(`清除描述失败 (${projectJsonPath}):`, err);
+          }
+        }
+      }
+    }
+    
+    // 清除成功后同时清除向量库文件和内存缓存
+    const dbPath = path.join(dirPath, 'repkg_vectors.json');
+    if (fs.existsSync(dbPath)) {
+      fs.unlinkSync(dbPath);
+    }
+    vectorCache = [];
+    
+    return { success: true, clearedCount };
+  } catch (error) {
+    console.error('一键清除描述出错:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// --- 原有 IPC 处理程序继续 ---
 ipcMain.handle('select-file', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],

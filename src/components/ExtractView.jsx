@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { FolderOpen, File, Play, Settings, ChevronDown, Check, Image as ImageIcon, Search, Filter, ChevronLeft, ChevronRight, X, Monitor, Heart, Bookmark, Plus, Trash2 } from 'lucide-react';
 import { useRepkg } from '../hooks/useRepkg';
 import { translations } from '../utils/i18n';
@@ -29,7 +29,26 @@ function ExtractView({ lang }) {
   const [useName, setUseName] = useState(() => localStorage.getItem('repkg-useName') === 'true');
   const [showAdvanced, setShowAdvanced] = useState(() => localStorage.getItem('repkg-showAdvanced') === 'true');
   
-  const stopRef = useRef(false);
+  // NL Search Settings
+  const [enableNLSearch, setEnableNLSearch] = useState(() => localStorage.getItem('repkg-enableNLSearch') === 'true');
+  const [llmProvider, setLlmProvider] = useState(() => localStorage.getItem('repkg-llmProvider') || 'https://api.openai.com/v1');
+  const [llmApiKey, setLlmApiKey] = useState(() => localStorage.getItem('repkg-llmApiKey') || '');
+  const [llmModel, setLlmModel] = useState(() => localStorage.getItem('repkg-llmModel') || 'gpt-4o-mini');
+  const [embeddingModelPath, setEmbeddingModelPath] = useState(() => localStorage.getItem('repkg-embeddingModelPath') || 'Qwen/Qwen3-Embedding-0.6B');
+  const [topK, setTopK] = useState(() => parseInt(localStorage.getItem('repkg-topK') || '10'));
+  const [enableRerank, setEnableRerank] = useState(() => localStorage.getItem('repkg-enableRerank') === 'true');
+  const [showNLSettings, setShowNLSettings] = useState(() => localStorage.getItem('repkg-showNLSettings') === 'true');
+
+  // NL Status
+  const [nlStatus, setNlStatus] = useState({ 
+    total: 0, 
+    processed: 0, 
+    needsUpdate: false, 
+    isDBLoaded: false,
+    isProcessing: false,
+    currentTask: '' 
+  });
+  const [nlSearchResults, setNlSearchResults] = useState(null); // null means no NL search active
   const [wallpapers, setWallpapers] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isScanning, setIsScanning] = useState(false);
@@ -54,6 +73,137 @@ function ExtractView({ lang }) {
   const [collectionFilter, setCollectionFilter] = useState('all');
   
   const { runCommand, stopCommand, output, isRunning, setOutput, setIsRunning } = useRepkg();
+
+  // NL Search Logic
+  const checkNLStatus = useCallback(async () => {
+    if (!inputPath || !window.electronAPI?.checkNLStatus) return;
+    try {
+      const status = await window.electronAPI.checkNLStatus(inputPath);
+      setNlStatus(prev => ({ ...prev, ...status }));
+    } catch (err) {
+      console.error('检查 NL 状态失败:', err);
+    }
+  }, [inputPath]);
+
+  useEffect(() => {
+    checkNLStatus();
+  }, [inputPath, checkNLStatus]);
+
+  useEffect(() => {
+    if (!window.electronAPI?.onNLProgress) return;
+    const cleanup = window.electronAPI.onNLProgress((data) => {
+      setNlStatus(prev => ({
+        ...prev,
+        total: data.total,
+        processed: data.processed,
+        currentTask: data.task,
+        isProcessing: true
+      }));
+    });
+    return cleanup;
+  }, []);
+
+  const handleUpdateNLDB = async () => {
+    if (!inputPath || !enableNLSearch) return;
+    setNlStatus(prev => ({ ...prev, isProcessing: true }));
+    try {
+      const result = await window.electronAPI.updateNLDB({
+        dirPath: inputPath,
+        config: { llmProvider, llmApiKey, llmModel, embeddingModelPath }
+      });
+      if (result.success) {
+        await checkNLStatus();
+        alert('向量库更新成功！');
+      } else {
+        alert(`更新失败: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`发生错误: ${err.message}`);
+    } finally {
+      setNlStatus(prev => ({ ...prev, isProcessing: false, currentTask: '' }));
+    }
+  };
+
+  const handleClearNLDescriptions = async () => {
+    if (!inputPath) return;
+    if (!confirm(t.clearDescriptionsConfirm)) return;
+    
+    try {
+      const result = await window.electronAPI.clearNLDescriptions(inputPath);
+      if (result.success) {
+        alert(t.clearSuccess.replace('{count}', result.clearedCount));
+        await checkNLStatus();
+      } else {
+        alert(`${t.operationFailed}: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`${t.operationFailed}: ${err.message}`);
+    }
+  };
+
+  const handleNLSearch = async () => {
+    if (!searchTerm.trim() || !inputPath) {
+      setNlSearchResults(null);
+      return;
+    }
+    
+    setNlStatus(prev => ({ ...prev, isProcessing: true, currentTask: '向量检索中...' }));
+    
+    try {
+      // 1. 向量搜索
+      const vectorResult = await window.electronAPI.vectorSearch({
+        query: searchTerm,
+        topK: topK,
+        dirPath: inputPath,
+        embeddingModelPath: embeddingModelPath
+      });
+
+      if (!vectorResult.success) {
+        throw new Error(vectorResult.error);
+      }
+
+      let finalIds = vectorResult.results.map(r => r.id);
+
+      // 2. 如果开启了 Rerank
+      if (enableRerank && finalIds.length > 0) {
+        setNlStatus(prev => ({ ...prev, currentTask: t.reranking }));
+        
+        // 准备 Rerank 数据：从当前所有壁纸中找出初选中的那些，包含标题和描述
+        const candidates = wallpapers
+          .filter(wp => finalIds.includes(wp.id))
+          .map(wp => ({
+            id: wp.id,
+            title: wp.title,
+            preview_description: wp.description // 这里的 description 对应的是 project.json 的 preview_description
+          }));
+
+        const rerankResult = await window.electronAPI.rerankResults({
+          query: searchTerm,
+          candidates,
+          config: { llmProvider, llmApiKey, llmModel }
+        });
+
+        if (rerankResult.success && rerankResult.results.length > 0) {
+          finalIds = rerankResult.results;
+        }
+      }
+
+      setNlSearchResults(finalIds);
+    } catch (err) {
+      console.error('NL 搜索出错:', err);
+      setNlSearchResults(null);
+      alert(`搜索失败: ${err.message}`);
+    } finally {
+      setNlStatus(prev => ({ ...prev, isProcessing: false, currentTask: '' }));
+    }
+  };
+
+  // Reset NL search when searchTerm is cleared
+  useEffect(() => {
+    if (!searchTerm) {
+      setNlSearchResults(null);
+    }
+  }, [searchTerm]);
 
   const sanitizePath = (name) => {
     return name.replace(/[\\/:*?"<>|]/g, '');
@@ -80,19 +230,34 @@ function ExtractView({ lang }) {
     localStorage.setItem('repkg-useName', useName);
     localStorage.setItem('repkg-showAdvanced', showAdvanced);
     localStorage.setItem('repkg-collectionFilter', collectionFilter);
-  }, [inputPath, outputDir, ignoreExts, onlyExts, convertTex, noTexConvert, overwrite, debugInfo, recursive, singleDir, skipErrors, copyProject, justCopy, useName, showAdvanced, collectionFilter]);
+    localStorage.setItem('repkg-enableNLSearch', enableNLSearch);
+    localStorage.setItem('repkg-llmProvider', llmProvider);
+    localStorage.setItem('repkg-llmApiKey', llmApiKey);
+    localStorage.setItem('repkg-llmModel', llmModel);
+    localStorage.setItem('repkg-embeddingModelPath', embeddingModelPath);
+    localStorage.setItem('repkg-topK', topK.toString());
+    localStorage.setItem('repkg-enableRerank', enableRerank);
+    localStorage.setItem('repkg-showNLSettings', showNLSettings);
+  }, [inputPath, outputDir, ignoreExts, onlyExts, convertTex, noTexConvert, overwrite, debugInfo, recursive, singleDir, skipErrors, copyProject, justCopy, useName, showAdvanced, collectionFilter, enableNLSearch, llmProvider, llmApiKey, llmModel, embeddingModelPath, topK, enableRerank, showNLSettings]);
 
   const filteredWallpapers = useMemo(() => {
     return wallpapers.filter(wp => {
-      const matchesSearch = !searchTerm || 
-        wp.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        wp.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      // Logic for NL Search Results
+      let matchesSearch = true;
+      if (enableNLSearch && nlSearchResults !== null) {
+        matchesSearch = nlSearchResults.includes(wp.id);
+      } else {
+        matchesSearch = !searchTerm || 
+          wp.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+          wp.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      }
+
       const matchesType = typeFilter === 'all' || wp.type === typeFilter;
       const matchesRating = ratingFilter === 'all' || wp.contentrating === ratingFilter;
       const matchesCollection = collectionFilter === 'all' || (wp.collections && wp.collections.includes(collectionFilter));
       return matchesSearch && matchesType && matchesRating && matchesCollection;
     });
-  }, [wallpapers, searchTerm, typeFilter, ratingFilter, collectionFilter]);
+  }, [wallpapers, searchTerm, typeFilter, ratingFilter, collectionFilter, nlSearchResults, enableNLSearch]);
 
   const types = useMemo(() => ['all', ...new Set(wallpapers.map(w => w.type))].sort(), [wallpapers]);
   const ratings = useMemo(() => ['all', ...new Set(wallpapers.map(w => w.contentrating))].sort(), [wallpapers]);
@@ -372,9 +537,20 @@ function ExtractView({ lang }) {
                   </button>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input type="text" placeholder={t.search} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="input-field pl-9 py-1 text-xs" />
+                  <div className="relative col-span-1 sm:col-span-1">
+                    <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${enableNLSearch ? 'text-primary-500' : 'text-slate-400'}`} />
+                    <input 
+                      type="text" 
+                      placeholder={enableNLSearch ? t.nlSearchPlaceholder : t.search} 
+                      value={searchTerm} 
+                      onChange={(e) => setSearchTerm(e.target.value)} 
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && enableNLSearch) {
+                          handleNLSearch();
+                        }
+                      }}
+                      className={`input-field pl-9 py-1 text-xs ${enableNLSearch ? 'border-primary-300 focus:ring-primary-100' : ''}`} 
+                    />
                   </div>
                   <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input-field py-1 text-xs">
                     <option value="all">{t.allTypes}</option>
@@ -536,6 +712,86 @@ function ExtractView({ lang }) {
                           <span className="text-[10px] text-slate-500">{opt.label}</span>
                         </label>
                       ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* NL Search Settings */}
+                <div className="pt-2 border-t border-slate-100">
+                  <button onClick={() => setShowNLSettings(!showNLSettings)} className="flex items-center gap-1 text-[10px] font-bold text-primary-600 uppercase tracking-tight">
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showNLSettings ? 'rotate-180' : ''}`} /> {t.nlSearchSettings}
+                  </button>
+                  {showNLSettings && (
+                    <div className="mt-2 space-y-3 p-2 bg-primary-50/50 rounded-md border border-primary-100">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={enableNLSearch} onChange={e => setEnableNLSearch(e.target.checked)} className="w-3.5 h-3.5 text-primary-600 rounded" />
+                        <span className="text-xs font-bold text-primary-700">{t.enableNLSearch}</span>
+                      </label>
+                      
+                      {enableNLSearch && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div>
+                            <label className="block text-[10px] text-slate-500 mb-0.5">{t.llmProvider}</label>
+                            <input type="text" value={llmProvider} onChange={e => setLlmProvider(e.target.value)} className="input-field w-full py-1 text-[10px]" placeholder="https://..." />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-slate-500 mb-0.5">{t.llmApiKey}</label>
+                            <input type="password" value={llmApiKey} onChange={e => setLlmApiKey(e.target.value)} className="input-field w-full py-1 text-[10px]" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">{t.llmModel}</label>
+                              <input type="text" value={llmModel} onChange={e => setLlmModel(e.target.value)} className="input-field w-full py-1 text-[10px]" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-slate-500 mb-0.5">{t.topK}</label>
+                              <input type="number" value={topK} onChange={e => setTopK(parseInt(e.target.value))} className="input-field w-full py-1 text-[10px]" />
+                            </div>
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer pt-1">
+                            <input type="checkbox" checked={enableRerank} onChange={e => setEnableRerank(e.target.checked)} className="w-3.5 h-3.5 text-primary-600 rounded" />
+                            <span className="text-xs text-slate-600">{t.enableRerank}</span>
+                          </label>
+                          <div>
+                            <label className="block text-[10px] text-slate-500 mb-0.5">{t.embeddingModelPath}</label>
+                            <div className="flex gap-1">
+                              <input type="text" value={embeddingModelPath} onChange={e => setEmbeddingModelPath(e.target.value)} className="input-field flex-1 py-1 text-[10px]" />
+                              <button onClick={async () => {
+                                const path = await window.electronAPI.selectFolder();
+                                if (path) setEmbeddingModelPath(path);
+                              }} className="btn-secondary px-2 py-0.5 text-[10px]">{t.select}</button>
+                            </div>
+                          </div>
+
+                          {/* Progress Display */}
+                          {(nlStatus.processed < nlStatus.total || nlStatus.isProcessing || nlStatus.needsUpdate) && (
+                            <div className="mt-3 pt-2 border-t border-primary-100">
+                              <div className="flex justify-between text-[10px] mb-1">
+                                <span className="text-slate-500">{nlStatus.currentTask || (nlStatus.needsUpdate ? t.dbOutOfDate : t.imageProcessingProgress)}</span>
+                                <span className="font-bold text-primary-700">{nlStatus.processed}/{nlStatus.total}</span>
+                              </div>
+                              <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div className="bg-primary-600 h-full transition-all duration-300" style={{ width: `${nlStatus.total > 0 ? (nlStatus.processed / nlStatus.total) * 100 : 0}%` }} />
+                              </div>
+                              <button 
+                                onClick={() => handleUpdateNLDB()} 
+                                disabled={nlStatus.isProcessing}
+                                className="w-full mt-2 py-1 text-[10px] font-bold bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
+                              >
+                                {nlStatus.isProcessing ? '...' : t.updateVectorDB}
+                              </button>
+                              
+                              <button 
+                                onClick={handleClearNLDescriptions}
+                                disabled={nlStatus.isProcessing}
+                                className="w-full mt-1 py-1 text-[10px] font-bold text-red-500 hover:bg-red-50 rounded border border-red-100 transition-colors"
+                              >
+                                {t.clearDescriptions}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

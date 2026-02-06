@@ -17,6 +17,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWallpaper: (filePath, options) => ipcRenderer.invoke('set-wallpaper', filePath, options),
   updateWallpaperCollections: (data) => ipcRenderer.invoke('update-wallpaper-collections', data),
   deleteCollection: (data) => ipcRenderer.invoke('delete-collection', data),
+  
+  // NL Search
+  checkNLStatus: (dirPath) => ipcRenderer.invoke('check-nl-status', dirPath),
+  updateNLDB: (data) => ipcRenderer.invoke('update-nl-db', data),
+  vectorSearch: (data) => ipcRenderer.invoke('vector-search', data),
+  rerankResults: (data) => ipcRenderer.invoke('rerank-results', data),
+  clearNLDescriptions: (dirPath) => ipcRenderer.invoke('clear-nl-descriptions', dirPath),
+  onNLProgress: (callback) => {
+    const subscription = (event, data) => callback(data);
+    ipcRenderer.on('nl-progress', subscription);
+    return () => ipcRenderer.removeListener('nl-progress', subscription);
+  },
+  removeNLProgressListener: () => {
+    ipcRenderer.removeAllListeners('nl-progress');
+  },
+
   onRepkgOutput: (callback) => {
     ipcRenderer.on('repkg-output', (event, data) => callback(data));
   },
