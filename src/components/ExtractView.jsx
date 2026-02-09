@@ -28,6 +28,9 @@ function ExtractView({ lang }) {
   const [justCopy, setJustCopy] = useState(() => localStorage.getItem('repkg-justCopy') === 'true');
   const [useName, setUseName] = useState(() => localStorage.getItem('repkg-useName') === 'true');
   const [showAdvanced, setShowAdvanced] = useState(() => localStorage.getItem('repkg-showAdvanced') === 'true');
+  const [taggerModelPath, setTaggerModelPath] = useState(() => localStorage.getItem('repkg-taggerModelPath') || '');
+  const [isTaggerRunning, setIsTaggerRunning] = useState(false);
+  const [taggerProgress, setTaggerProgress] = useState('');
   
   const stopRef = useRef(false);
   const [wallpapers, setWallpapers] = useState([]);
@@ -48,12 +51,31 @@ function ExtractView({ lang }) {
   const [collectionModal, setCollectionModal] = useState({ show: false, ids: [] });
 
   // Search and Filter state
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchText, setSearchText] = useState('');       // 标题/描述搜索
+  const [searchTags, setSearchTags] = useState('');       // 标签搜索（逗号分隔）
   const [typeFilter, setTypeFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState('all');
   const [collectionFilter, setCollectionFilter] = useState('all');
+  const [allTagNames, setAllTagNames] = useState([]);
+  const [tagSuggestionsOpen, setTagSuggestionsOpen] = useState(false);
+  const [tagSuggestionIndex, setTagSuggestionIndex] = useState(0);
+  const searchInputRef = useRef(null);
+  const tagSuggestionsRef = useRef(null);
   
   const { runCommand, stopCommand, output, isRunning, setOutput, setIsRunning } = useRepkg();
+
+  // 从模型目录加载标签列表（用于搜索待选）
+  useEffect(() => {
+    if (!taggerModelPath?.trim() || !window.electronAPI?.getTaggerTags) {
+      setAllTagNames([]);
+      return;
+    }
+    let cancelled = false;
+    window.electronAPI.getTaggerTags(taggerModelPath.trim()).then((names) => {
+      if (!cancelled && Array.isArray(names)) setAllTagNames(names);
+    });
+    return () => { cancelled = true; };
+  }, [taggerModelPath]);
 
   const sanitizePath = (name) => {
     return name.replace(/[\\/:*?"<>|]/g, '');
@@ -61,7 +83,7 @@ function ExtractView({ lang }) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, typeFilter, ratingFilter, collectionFilter, wallpapers.length]);
+  }, [searchText, searchTags, typeFilter, ratingFilter, collectionFilter, wallpapers.length]);
 
   useEffect(() => {
     localStorage.setItem('repkg-inputPath', inputPath);
@@ -80,19 +102,94 @@ function ExtractView({ lang }) {
     localStorage.setItem('repkg-useName', useName);
     localStorage.setItem('repkg-showAdvanced', showAdvanced);
     localStorage.setItem('repkg-collectionFilter', collectionFilter);
-  }, [inputPath, outputDir, ignoreExts, onlyExts, convertTex, noTexConvert, overwrite, debugInfo, recursive, singleDir, skipErrors, copyProject, justCopy, useName, showAdvanced, collectionFilter]);
+    localStorage.setItem('repkg-taggerModelPath', taggerModelPath);
+  }, [inputPath, outputDir, ignoreExts, onlyExts, convertTex, noTexConvert, overwrite, debugInfo, recursive, singleDir, skipErrors, copyProject, justCopy, useName, showAdvanced, collectionFilter, taggerModelPath]);
 
   const filteredWallpapers = useMemo(() => {
     return wallpapers.filter(wp => {
-      const matchesSearch = !searchTerm || 
-        wp.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        wp.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      const text = searchText?.trim() || '';
+      const tagList = Array.isArray(wp.preview_tagger) ? wp.preview_tagger : (typeof wp.preview_tagger === 'string' ? wp.preview_tagger.split(',').map(s => s.trim()).filter(Boolean) : []);
+      const wpTagSet = new Set(tagList.map(t => t.toLowerCase()));
+      const matchesText = !text ||
+        wp.title?.toLowerCase().includes(text.toLowerCase()) ||
+        wp.description?.toLowerCase().includes(text.toLowerCase());
+      const tagsRaw = searchTags?.trim() || '';
+      const requiredTags = tagsRaw ? tagsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const matchesTags = requiredTags.length === 0 || requiredTags.every(tag => wpTagSet.has(tag.toLowerCase()));
       const matchesType = typeFilter === 'all' || wp.type === typeFilter;
       const matchesRating = ratingFilter === 'all' || wp.contentrating === ratingFilter;
       const matchesCollection = collectionFilter === 'all' || (wp.collections && wp.collections.includes(collectionFilter));
-      return matchesSearch && matchesType && matchesRating && matchesCollection;
+      return matchesText && matchesTags && matchesType && matchesRating && matchesCollection;
     });
-  }, [wallpapers, searchTerm, typeFilter, ratingFilter, collectionFilter]);
+  }, [wallpapers, searchText, searchTags, typeFilter, ratingFilter, collectionFilter]);
+
+  // 当前输入“段”（最后一个逗号后的部分），用于待选匹配
+  const searchTagToken = useMemo(() => {
+    const parts = (searchTags || '').split(',');
+    return (parts[parts.length - 1] || '').trim();
+  }, [searchTags]);
+
+  // 待选标签：以当前 token 开头的标签，最多 20 条
+  const tagSuggestions = useMemo(() => {
+    if (!searchTagToken || allTagNames.length === 0) return [];
+    const lower = searchTagToken.toLowerCase();
+    return allTagNames.filter(tag => tag.toLowerCase().startsWith(lower)).slice(0, 20);
+  }, [allTagNames, searchTagToken]);
+
+  const applyTagSuggestion = (tag) => {
+    const parts = (searchTags || '').split(',');
+    parts[parts.length - 1] = tag;
+    const joined = parts.map(p => p.trim()).filter(Boolean).join(', ');
+    setSearchTags(joined ? joined + ', ' : tag + ', ');
+    setTagSuggestionsOpen(false);
+    setTagSuggestionIndex(0);
+    searchInputRef.current?.focus();
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (!tagSuggestionsOpen || tagSuggestions.length === 0) {
+      if (e.key === 'Escape') setTagSuggestionsOpen(false);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setTagSuggestionIndex(i => Math.min(i + 1, tagSuggestions.length - 1));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setTagSuggestionIndex(i => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === 'Tab' || e.key === 'Enter') {
+      e.preventDefault();
+      const sel = tagSuggestions[tagSuggestionIndex];
+      if (sel) applyTagSuggestion(sel);
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setTagSuggestionsOpen(false);
+    }
+  };
+
+  // 标签输入变化时：有匹配则打开待选并重置选中下标
+  const handleSearchTagsChange = (e) => {
+    const v = e.target.value;
+    setSearchTags(v);
+    const parts = (v || '').split(',');
+    const token = (parts[parts.length - 1] || '').trim();
+    if (token && allTagNames.some(t => t.toLowerCase().startsWith(token.toLowerCase()))) {
+      setTagSuggestionsOpen(true);
+      setTagSuggestionIndex(0);
+    } else {
+      setTagSuggestionsOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    setTagSuggestionIndex(0);
+  }, [tagSuggestions.length]);
 
   const types = useMemo(() => ['all', ...new Set(wallpapers.map(w => w.type))].sort(), [wallpapers]);
   const ratings = useMemo(() => ['all', ...new Set(wallpapers.map(w => w.contentrating))].sort(), [wallpapers]);
@@ -179,6 +276,61 @@ function ExtractView({ lang }) {
   const handleSelectOutput = async () => {
     const path = await window.electronAPI.selectFolder();
     if (path) setOutputDir(path);
+  };
+
+  const handleSelectTaggerModel = async () => {
+    const path = await window.electronAPI.selectTaggerModel();
+    if (path) setTaggerModelPath(path);
+  };
+
+  const handleGenerateTags = async () => {
+    if (!taggerModelPath?.trim()) {
+      alert(lang === 'zh' ? '请先选择打标签模型目录（含 model.onnx 和 selected_tags.csv）' : 'Please select the tagger model directory first (with model.onnx and selected_tags.csv)');
+      return;
+    }
+    const paths = selectedIds.size > 0
+      ? wallpapers.filter(w => selectedIds.has(w.id)).map(w => w.path)
+      : filteredWallpapers.map(w => w.path);
+    if (paths.length === 0) {
+      alert(lang === 'zh' ? '没有可处理的壁纸' : 'No wallpapers to process');
+      return;
+    }
+    setIsTaggerRunning(true);
+    setTaggerProgress('');
+    const progressHandler = ({ current, total, name, error }) => {
+      const msg = error
+        ? `${current}/${total}: ${name} - ${error}`
+        : t.taggerProgress.replace('{current}', current).replace('{total}', total).replace('{name}', name);
+      setTaggerProgress(msg);
+    };
+    window.electronAPI.onTaggerProgress(progressHandler);
+    try {
+      const res = await window.electronAPI.runPreviewTagger({
+        modelDir: taggerModelPath.trim(),
+        wallpaperPaths: paths,
+        threshold: 0.35,
+      });
+      window.electronAPI.removeTaggerProgressListener();
+      if (res.ok) {
+        const resultsMap = new Map((res.results || []).map(r => [r.path, r]));
+        setWallpapers(prev => prev.map(wp => {
+          const r = resultsMap.get(wp.path);
+          if (r && r.success && r.tags) return { ...wp, preview_tagger: r.tags };
+          return wp;
+        }));
+        setTaggerProgress(t.taggerDone);
+        setTimeout(() => setTaggerProgress(''), 2000);
+      } else {
+        setTaggerProgress(t.taggerError + ': ' + (res.error || ''));
+        alert((res.error) || t.taggerError);
+      }
+    } catch (err) {
+      window.electronAPI.removeTaggerProgressListener();
+      setTaggerProgress(t.taggerError + ': ' + (err.message || err));
+      alert(t.taggerError + ': ' + (err.message || err));
+    } finally {
+      setIsTaggerRunning(false);
+    }
   };
 
   const handleUpdateCollections = async (wallpaperIds, collectionName, action) => {
@@ -373,8 +525,43 @@ function ExtractView({ lang }) {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input type="text" placeholder={t.search} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="input-field pl-9 py-1 text-xs" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none z-10" />
+                    <input
+                      type="text"
+                      placeholder={t.searchTextPlaceholder}
+                      value={searchText}
+                      onChange={(e) => setSearchText(e.target.value)}
+                      className="input-field pl-9 py-1 text-xs w-full"
+                    />
+                  </div>
+                  <div className="relative" ref={tagSuggestionsRef}>
+                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none z-10" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder={t.searchTagsPlaceholder}
+                      value={searchTags}
+                      onChange={handleSearchTagsChange}
+                      onKeyDown={handleSearchKeyDown}
+                      onFocus={() => searchTagToken && tagSuggestions.length > 0 && setTagSuggestionsOpen(true)}
+                      onBlur={() => setTimeout(() => setTagSuggestionsOpen(false), 150)}
+                      className="input-field pl-9 py-1 text-xs w-full"
+                    />
+                    {tagSuggestionsOpen && tagSuggestions.length > 0 && (
+                      <ul className="absolute left-0 right-0 top-full mt-0.5 bg-white border border-slate-200 shadow-lg rounded-lg py-1 max-h-48 overflow-y-auto z-50 custom-scrollbar">
+                        {tagSuggestions.map((tag, i) => (
+                          <li key={tag}>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); applyTagSuggestion(tag); }}
+                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-primary-50 ${i === tagSuggestionIndex ? 'bg-primary-100 text-primary-800' : 'text-slate-700'}`}
+                            >
+                              {tag}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input-field py-1 text-xs">
                     <option value="all">{t.allTypes}</option>
@@ -501,6 +688,32 @@ function ExtractView({ lang }) {
                       <label className="block text-[10px] text-slate-400 mb-1">{t.ignoreExts}</label>
                       <input type="text" value={ignoreExts} onChange={(e) => setIgnoreExts(e.target.value)} className="input-field py-1.5 text-xs" />
                     </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-50">
+                  <h3 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5"><Filter className="w-3.5 h-3.5" />{t.tagSearch}</h3>
+                  <div className="space-y-2 mb-3">
+                    <label className="block text-[10px] text-slate-400">{t.taggerModelPath}</label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={taggerModelPath}
+                        onChange={(e) => setTaggerModelPath(e.target.value)}
+                        placeholder={t.taggerModelPathPlaceholder}
+                        className="input-field flex-1 py-1.5 text-xs"
+                      />
+                      <button type="button" onClick={handleSelectTaggerModel} className="btn-secondary py-1 text-xs px-2">{t.select}</button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGenerateTags}
+                      disabled={isTaggerRunning || wallpapers.length === 0}
+                      className="w-full py-2 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isTaggerRunning ? t.generatingTags : t.generateTags}
+                    </button>
+                    {taggerProgress && <p className="text-[10px] text-slate-500 truncate" title={taggerProgress}>{taggerProgress}</p>}
                   </div>
                 </div>
 

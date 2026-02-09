@@ -43,7 +43,9 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "lucide-react": "^0.294.0",
-    "clsx": "^2.0.0"
+    "clsx": "^2.0.0",
+    "sharp": "^0.33.5",
+    "onnxruntime-node": "^1.20.0"
   },
   "build": {
     "appId": "com.repkg.webui",
@@ -55,7 +57,16 @@
       "dist/**/*",
       "electron/**/*",
       "resources/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/onnxruntime-node/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/onnxruntime-common/**/*",
+      "node_modules/@img/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*"
     ],
     "extraResources": [
       {

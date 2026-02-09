@@ -1,6 +1,6 @@
 # RePKG ToolBox
 
-这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面，可以在macOS上批量预览/解包wallpaper engine壁纸文件。或是为Mac设置动态/静态壁纸。
+这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面，可以在批量预览/解包wallpaper engine壁纸文件。或是为Mac设置动态/静态壁纸。
 
 <div align="center">
 
@@ -8,12 +8,10 @@
 
 </div>
 
-<img width="1312" height="1000" alt="截屏2026-01-29 11 52 15" src="https://github.com/user-attachments/assets/e9d2ee6a-ae2a-4e12-8fa5-e522651a2f89" />
-<img width="1052" height="588" alt="截屏2026-02-01 00 20 40" src="https://github.com/user-attachments/assets/c570fb01-4a28-4799-b43f-02ca9b9fce87" />
 
-## ✨ 核心特性
+## 核心特性
 
-- **可视化壁纸相册**：采用直观的网格预览模式，让寻找壁纸像刷相册一样简单。
+- **可视化壁纸相册**。
 - **为macOS设置视频/图片壁纸**：可以右键预览的壁纸，程序会自动解包，展示当前壁纸所包含的资源文件，可以自由选择视频/图片以设置为Mac的桌面壁纸。
 
 > Windows不支持使用此软件设置壁纸

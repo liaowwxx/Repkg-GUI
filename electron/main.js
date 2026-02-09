@@ -332,6 +332,64 @@ ipcMain.handle('select-folder', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+// 选择打标签模型目录（需含 model.onnx 和 selected_tags.csv）
+ipcMain.handle('select-tagger-model', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: '选择标签模型目录（需包含 model.onnx 和 selected_tags.csv）',
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+// 从模型目录读取 selected_tags.csv，返回标签名数组（用于搜索待选）
+ipcMain.handle('get-tagger-tags', async (event, modelDir) => {
+  if (!modelDir || !fs.existsSync(modelDir)) return [];
+  const csvPath = path.join(modelDir, 'selected_tags.csv');
+  if (!fs.existsSync(csvPath)) return [];
+  try {
+    const text = fs.readFileSync(csvPath, 'utf8');
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const header = lines[0].toLowerCase();
+    const nameIdx = header.split(',').indexOf('name');
+    if (nameIdx === -1) return [];
+    const names = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      const name = cols[nameIdx];
+      if (name) names.push(name.trim());
+    }
+    return names;
+  } catch (err) {
+    console.error('get-tagger-tags error:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('run-preview-tagger', async (event, { modelDir, wallpaperPaths, threshold }) => {
+  if (!modelDir || !fs.existsSync(modelDir)) {
+    return { ok: false, error: '模型目录无效或不存在' };
+  }
+  if (!wallpaperPaths || !Array.isArray(wallpaperPaths) || wallpaperPaths.length === 0) {
+    return { ok: false, error: '壁纸路径列表为空' };
+  }
+  try {
+    const { runTaggerOnWallpapers } = await import('./tagger.js');
+    const results = await runTaggerOnWallpapers(
+      modelDir,
+      wallpaperPaths,
+      (current, total, name, err) => {
+        event.sender.send('tagger-progress', { current, total, name, error: err || null });
+      },
+      typeof threshold === 'number' ? threshold : 0.35
+    );
+    return { ok: true, results };
+  } catch (err) {
+    console.error('run-preview-tagger error:', err);
+    return { ok: false, error: err.message || String(err) };
+  }
+});
+
 ipcMain.handle('run-repkg', async (event, args) => {
   if (currentRepkgProcess) {
     return { code: -1, stderr: '已有正在运行的进程' };
@@ -427,6 +485,8 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
           let previewPath = null;
           if (subEntries.includes('preview.jpg')) {
             previewPath = path.join(subPath, 'preview.jpg');
+          } else if (subEntries.includes('preview.png')) {
+            previewPath = path.join(subPath, 'preview.png');
           } else if (subEntries.includes('preview.gif')) {
             previewPath = path.join(subPath, 'preview.gif');
           }
@@ -459,10 +519,11 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
               contentrating: projectInfo.contentrating || 'Everyone',
               description: projectInfo.description || '',
               path: subPath,
-              pkgPath: hasPkg ? path.join(subPath, pkgFile) : null, // 记录具体的 pkg 路径
+              pkgPath: hasPkg ? path.join(subPath, pkgFile) : null,
               preview: previewUrl,
               isPkg: hasPkg,
               collections: projectInfo.repkgcollection || [],
+              preview_tagger: Array.isArray(projectInfo.preview_tagger) ? projectInfo.preview_tagger : (typeof projectInfo.preview_tagger === 'string' ? projectInfo.preview_tagger.split(',').map(s => s.trim()).filter(Boolean) : []),
             };
 
             // 发送单个壁纸发现事件

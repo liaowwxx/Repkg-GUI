@@ -4,6 +4,15 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
   selectFile: () => ipcRenderer.invoke('select-file'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
+  selectTaggerModel: () => ipcRenderer.invoke('select-tagger-model'),
+  getTaggerTags: (modelDir) => ipcRenderer.invoke('get-tagger-tags', modelDir),
+  runPreviewTagger: (opts) => ipcRenderer.invoke('run-preview-tagger', opts),
+  onTaggerProgress: (callback) => {
+    ipcRenderer.on('tagger-progress', (event, data) => callback(data));
+  },
+  removeTaggerProgressListener: () => {
+    ipcRenderer.removeAllListeners('tagger-progress');
+  },
   runRepkg: (args) => ipcRenderer.invoke('run-repkg', args),
   stopRepkg: () => ipcRenderer.invoke('stop-repkg'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
