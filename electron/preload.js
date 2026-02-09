@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ensureDir: (dirPath) => ipcRenderer.invoke('ensure-dir', dirPath),
   getLargestAssets: (dirPath) => ipcRenderer.invoke('get-largest-assets', dirPath),
   setWallpaper: (filePath, options) => ipcRenderer.invoke('set-wallpaper', filePath, options),
+  saveBase64AsTemp: (base64Data) => ipcRenderer.invoke('save-base64-as-temp', base64Data),
   updateWallpaperCollections: (data) => ipcRenderer.invoke('update-wallpaper-collections', data),
   deleteCollection: (data) => ipcRenderer.invoke('delete-collection', data),
   onRepkgOutput: (callback) => {

@@ -4,6 +4,8 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import os from 'os';
 import fs from 'fs';
+import { createReadStream } from 'fs';
+import { Readable } from 'node:stream';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -286,6 +288,28 @@ app.whenReady().then(() => {
         return new Response('Not Found', { status: 404 });
       }
 
+      const range = request.headers.get('Range');
+      if (range && range.startsWith('bytes=')) {
+        const stats = fs.statSync(filePath);
+        const fileSize = stats.size;
+        const parts = range.slice(6).split('-');
+        const start = parts[0] ? parseInt(parts[0], 10) : 0;
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const contentLength = end - start + 1;
+        const stream = createReadStream(filePath, { start, end });
+        const webStream = Readable.toWeb(stream);
+        const ext = path.extname(filePath).toLowerCase();
+        const mime = ext === '.mp4' ? 'video/mp4' : ext === '.mov' ? 'video/quicktime' : 'application/octet-stream';
+        return new Response(webStream, {
+          status: 206,
+          headers: {
+            'Content-Type': mime,
+            'Content-Length': String(contentLength),
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+          },
+        });
+      }
       const fileUrl = pathToFileURL(filePath).toString();
       return net.fetch(fileUrl);
     } catch (err) {
@@ -820,4 +844,19 @@ ipcMain.handle('set-wallpaper', async (event, filePath, options = {}) => {
   }
   
   return { success: false, error: '不支持的平台' };
+});
+
+// 将 base64 图片保存为临时文件，用于从视频提取帧设为桌面壁纸
+ipcMain.handle('save-base64-as-temp', async (event, base64Data) => {
+  if (!base64Data || typeof base64Data !== 'string') return { success: false, error: '无效的 base64 数据' };
+  try {
+    const base64Content = base64Data.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Content, 'base64');
+    const tempPath = path.join(os.tmpdir(), `repkg-frame-${Date.now()}.png`);
+    fs.writeFileSync(tempPath, buffer);
+    return { success: true, path: tempPath };
+  } catch (err) {
+    console.error('保存临时图片失败:', err);
+    return { success: false, error: err.message };
+  }
 });

@@ -860,6 +860,171 @@ function ContextMenu({ x, y, wp, allCollections, onOpenFolder, onSetAsWallpaper,
   );
 }
 
+function VideoAssetRow({ asset, isMuted, getAssetUrl, formatSize, onSelect, t, lang }) {
+  const videoRef = useRef(null);
+  const isScrubbingRef = useRef(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isSettingFrame, setIsSettingFrame] = useState(false);
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (isScrubbingRef.current || !videoRef.current) return;
+    setCurrentTime(videoRef.current.currentTime);
+  };
+
+  const handleSliderChange = (e) => {
+    const val = parseFloat(e.target.value);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = val;
+      setCurrentTime(val);
+    }
+  };
+
+  const handleSliderInteractionStart = () => {
+    isScrubbingRef.current = true;
+    videoRef.current?.pause();
+    const end = () => {
+      isScrubbingRef.current = false;
+      document.removeEventListener('mouseup', end);
+      document.removeEventListener('touchend', end);
+    };
+    document.addEventListener('mouseup', end);
+    document.addEventListener('touchend', end);
+  };
+
+  const handleSliderInteractionEnd = () => {
+    isScrubbingRef.current = false;
+  };
+
+  const captureFrame = async () => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) return null;
+    video.pause();
+    const targetTime = currentTime;
+    video.currentTime = targetTime;
+    if (video.seeking) {
+      await new Promise(resolve => video.addEventListener('seeked', resolve, { once: true }));
+    }
+    return new Promise((resolve) => {
+      const doCapture = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        video.pause();
+        resolve(canvas.toDataURL('image/png'));
+      };
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.play();
+        video.requestVideoFrameCallback((now, metadata) => {
+          doCapture();
+        });
+      } else {
+        setTimeout(doCapture, 150);
+      }
+    });
+  };
+
+  const handleSetFrameAsDesktop = async () => {
+    if (!window.electronAPI?.saveBase64AsTemp || !window.electronAPI?.setWallpaper) {
+      alert(t.operationFailed + ': ' + (t.electronOnly || 'Electron API 不可用'));
+      return;
+    }
+    setIsSettingFrame(true);
+    try {
+      const base64 = await captureFrame();
+      if (!base64) {
+        alert(t.operationFailed + ': ' + (lang === 'zh' ? '无法捕获视频帧' : 'Failed to capture video frame'));
+        return;
+      }
+      const res = await window.electronAPI.saveBase64AsTemp(base64);
+      if (!res.success) {
+        alert(t.operationFailed + ': ' + res.error);
+        return;
+      }
+      const wallRes = await window.electronAPI.setWallpaper(res.path);
+      if (wallRes.success) {
+        alert(t.setWallpaperSuccess);
+      } else {
+        alert(`${t.setWallpaperFailed}: ${wallRes.error}`);
+      }
+    } catch (err) {
+      alert(`${t.operationFailed}: ${err.message}`);
+    } finally {
+      setIsSettingFrame(false);
+    }
+  };
+
+  const formatTime = (sec) => {
+    if (!isFinite(sec) || isNaN(sec)) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="group flex flex-col md:flex-row gap-6 p-4 border border-slate-200 rounded-2xl hover:border-primary-500 hover:bg-primary-50 transition-all">
+      <div className="w-full md:w-72 flex flex-col gap-3 shrink-0">
+        <div className="aspect-video bg-slate-100 rounded-xl overflow-hidden border border-slate-100">
+          <video
+            ref={videoRef}
+            src={getAssetUrl(asset.path)}
+            className="w-full h-full object-cover"
+            muted
+            preload="auto"
+            playsInline
+            onLoadedMetadata={handleLoadedMetadata}
+            onTimeUpdate={handleTimeUpdate}
+            onMouseOver={e => e.target.play()}
+            onMouseOut={e => { e.target.pause(); }}
+            loop
+          />
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-slate-500">{t.videoFramePickerHint}</p>
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min={0}
+              max={duration || 100}
+              step={0.1}
+              value={currentTime}
+              onChange={handleSliderChange}
+              onMouseDown={handleSliderInteractionStart}
+              onMouseUp={handleSliderInteractionEnd}
+              onMouseLeave={handleSliderInteractionEnd}
+              onTouchStart={handleSliderInteractionStart}
+              onTouchEnd={handleSliderInteractionEnd}
+              className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+            />
+            <span className="text-xs text-slate-600 font-mono shrink-0 min-w-[3rem]">{formatTime(currentTime)} / {formatTime(duration)}</span>
+          </div>
+          <button
+            onClick={handleSetFrameAsDesktop}
+            disabled={isSettingFrame || duration === 0}
+            className="w-full py-2 text-sm font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+          >
+            {isSettingFrame ? <><div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />{lang === 'zh' ? '设置中...' : 'Setting...'}</> : <><ImageIcon className="w-4 h-4" />{t.setFrameAsDesktopWallpaper}</>}
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 flex flex-col justify-center min-w-0">
+        <p className="text-lg font-bold text-slate-900 truncate">{asset.name}</p>
+        <div className="flex items-center gap-3 mt-2"><span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span><span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span></div>
+      </div>
+      <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">{t.applyAsWallpaper}</button></div>
+    </div>
+  );
+}
+
 function AssetModal({ wp, assets, onClose, onSelect, lang }) {
   const t = translations[lang];
   const [isMuted, setIsMuted] = useState(true);
@@ -874,6 +1039,7 @@ function AssetModal({ wp, assets, onClose, onSelect, lang }) {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     return `repkg-thumb://local${normalizedPath}`;
   };
+  const isVideo = (ext) => ext === '.mp4' || ext === '.mov';
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
@@ -898,18 +1064,22 @@ function AssetModal({ wp, assets, onClose, onSelect, lang }) {
         </div>
         <div className="p-6 overflow-y-auto custom-scrollbar">
           <div className="grid grid-cols-1 gap-6">
-            {assets.map((asset, idx) => (
-              <div key={idx} className="group flex flex-col md:flex-row gap-6 p-4 border border-slate-200 rounded-2xl hover:border-primary-500 hover:bg-primary-50 transition-all">
-                <div className="w-full md:w-64 aspect-video bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-100">
-                  {asset.ext === '.mp4' ? <video src={getAssetUrl(asset.path)} className="w-full h-full object-cover" muted preload="metadata" onMouseOver={e => e.target.play()} onMouseOut={e => { e.target.pause(); e.target.currentTime = 0; }} loop /> : <img src={getAssetUrl(asset.path)} alt={asset.name} className="w-full h-full object-cover" />}
+            {assets.map((asset, idx) =>
+              isVideo(asset.ext) ? (
+                <VideoAssetRow key={idx} asset={asset} isMuted={isMuted} getAssetUrl={getAssetUrl} formatSize={formatSize} onSelect={onSelect} t={t} lang={lang} />
+              ) : (
+                <div key={idx} className="group flex flex-col md:flex-row gap-6 p-4 border border-slate-200 rounded-2xl hover:border-primary-500 hover:bg-primary-50 transition-all">
+                  <div className="w-full md:w-64 aspect-video bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-100">
+                    <img src={getAssetUrl(asset.path)} alt={asset.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 flex flex-col justify-center min-w-0">
+                    <p className="text-lg font-bold text-slate-900 truncate">{asset.name}</p>
+                    <div className="flex items-center gap-3 mt-2"><span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span><span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span></div>
+                  </div>
+                  <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">{t.applyAsWallpaper}</button></div>
                 </div>
-                <div className="flex-1 flex flex-col justify-center min-w-0">
-                  <p className="text-lg font-bold text-slate-900 truncate">{asset.name}</p>
-                  <div className="flex items-center gap-3 mt-2"><span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span><span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span></div>
-                </div>
-                <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">{t.applyAsWallpaper}</button></div>
-              </div>
-            ))}
+              )
+            )}
           </div>
         </div>
         <div className="p-4 bg-slate-50 border-t border-slate-100 text-center shrink-0"><p className="text-xs text-slate-400 italic">{t.cacheWarning}</p></div>

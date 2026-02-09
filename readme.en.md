@@ -1,8 +1,6 @@
 # RePKG ToolBox
 
->The English version of the README is machine-translated from Chinese and may contain errors.
-
-This is a modern graphical interface developed for the [RePKG](https://github.com/notscuffed/repkg) command-line tool. It allows batch previewing/unpacking of Wallpaper Engine wallpaper files on macOS, or setting dynamic/static wallpapers for Mac.
+This is a modern graphical interface developed based on the [RePKG](https://github.com/notscuffed/repkg) command-line tool, with many practical features added. It allows batch previewing/unpacking of Wallpaper Engine wallpaper files, setting up categorized favorites for wallpapers, and configuring static/dynamic video wallpapers for macOS.
 
 <div align="center">
 
@@ -10,85 +8,87 @@ This is a modern graphical interface developed for the [RePKG](https://github.co
 
 </div>
 
-<img width="1312" height="1000" alt="Screenshot 2026-01-29 11 52 15" src="https://github.com/user-attachments/assets/e9d2ee6a-ae2a-4e12-8fa5-e522651a2f89" />
-<img width="1052" height="588" alt="Screenshot 2026-02-01 00 20 40" src="https://github.com/user-attachments/assets/c570fb01-4a28-4799-b43f-02ca9b9fce87" />
+## Core Features
 
-## ✨ Core Features
+*   **Wallpaper Engine-like Visual Wallpaper Album**.
+*   **Set Video/Image Wallpapers for macOS**: Right-click on a previewed wallpaper, and the program will automatically unpack it, showing the resource files contained within. You can freely choose a video/image to set as your Mac desktop wallpaper.
 
-- **Visual Wallpaper Gallery**: An intuitive grid preview mode, making finding wallpapers as easy as browsing a photo album.
-- **Set Video/Image Wallpapers for macOS**: Right-click on a previewed wallpaper. The program will automatically unpack it, display the resource files contained in the wallpaper, and allow you to freely select videos/images to set as your Mac desktop wallpaper.
+> Windows does not support setting wallpapers with this software. Please use Wallpaper Engine for Windows.
 
-> Windows does not support using this software to set wallpapers.
+*   **Categorized Search/Filtering**: Filter and search wallpapers freely based on age rating, wallpaper type, wallpaper title, etc.
+*   **Categorized Favorites**: Add wallpapers to your custom-defined favorites folders and view them anytime using the filtering function.
+*   **Batch Multi-Selection Processing**: Supports multi-selection with the mouse in the preview interface for one-click batch extraction tasks.
+*   **Multi-language Support**: Click the language switch button in the top right corner to toggle between Chinese and English.
 
-- **Categorized Search/Filter**: Filter and search wallpapers freely based on age rating, wallpaper type, and wallpaper title.
-- **Customizable Favorites**: You can now add wallpapers to your custom favorite categories and view them anytime using the filter function.
-- **Smart Unpacking and Extraction**:
-  - **PKG Auto-processing**: Deep unpacking for `.pkg` format files.
-  - **Non-PKG Smart Scan**: Automatically identifies wallpapers that don't require unpacking, recursively searches and extracts all `.png`, `.jpg`, `.mp4` resources from their subdirectories.
-  - **Optional Copy-Only**: Check the "Copy Only" option in settings for quick wallpaper dumping.
-- **Batch Multi-select Processing**: Supports multi-selection with the mouse in the preview interface to execute batch extraction tasks with one click.
-- **Real-time Log System**: Logs the progress and results of each task in detail, supporting batch error tolerance.
-- **Multi-language Support**: Click the language switch button in the upper right corner to toggle between Chinese and English.
+## Optional Features
+
+*   **Tag Search**: Download the tagger model (only `model.onnx` and `selected_tags.csv` are needed) from [HuggingFace](https://huggingface.co/SmilingWolf/wd-v1-4-moat-tagger-v2/tree/main). It tags each wallpaper preview image to enhance search capabilities.
+
+## Notes
+
+*   Both the **Favorites** feature and the **Tag Search** feature will modify the `project.json` file within the wallpaper folders.
+*   The software is in **beta testing** and may contain bugs.
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### For Regular Users
+### Regular Users
 
-1. Download the appropriate file for your system from [Releases](https://github.com/liaowwxx/Repkg-GUI/releases/).
-2. **macOS Users**: Double-click the `.app` file to run, or use the `.dmg` installer.
-3. **Windows Users**: Double-click the `.exe` file to install, or use the portable version—after extracting, run `RePKG WebUI.exe`.
+1.  Download the file for your system from [Releases](https://github.com/liaowwxx/Repkg-GUI/releases/).
+2.  **macOS Users**: Double-click the `.app` file to run it, or use the `.dmg` installer.
+3.  **Windows Users**: Double-click the `.exe` installer, or use the portable version — extract it and run `RePKG ToolBox.exe`.
 
-> Windows platform does not support the wallpaper setting function. Please use Wallpaper Engine software to set wallpapers.
+Since I do not have an Apple Developer Program account, the app might prompt as "damaged" upon first launch on macOS. Here's the solution:
 
-### For Developers
-
-1. **Install Dependencies**
-
-   ```bash
-   npm install
-   ```
-2. **Start Development Server**
-
-   ```bash
-   npm run electron:dev
-   ```
-3. **Build the Application**
-
-   ```bash
-   # Build for macOS
-   npm run electron:build:mac
-   # Build for Windows
-   npm run electron:build:win64
-   ```
-
-## Project Structure
-
-```text
-repkg-webui/
-├── electron/          # Electron main process and preload scripts
-│   ├── main.js       # Handles core logic like file scanning, recursive copying
-│   └── preload.js    # Exposes cross-process APIs
-├── src/              # React application source code
-│   ├── components/   # Includes ExtractView (main interface), Gallery, etc.
-│   └── hooks/        # useRepkg hooks encapsulate command-line interaction
-├── resources/        # RePKG binary files for each platform
-└── build/            # Application icons and installation configuration
+```bash
+# Before launching for the first time, run the following command in Terminal:
+sudo xattr -rd com.apple.quarantine "/Applications/RePKG WebUI.app"
 ```
+
+If you are concerned about security, you can also clone the project locally and build it yourself, which avoids the `com.apple.quarantine` attribute that prevents execution.
+
+### Developers
+
+1.  **Clone the project locally**
+
+    ```bash
+    git clone git@github.com:liaowwxx/Repkg-Toolbox.git
+    ```
+
+2.  **Install dependencies**
+
+    ```bash
+    npm install
+    ```
+
+3.  **Start the development server (optional, for testing)**
+
+    ```bash
+    npm run electron:dev
+    ```
+
+4.  **Build the application**
+
+    ```bash
+    # Build for macOS
+    npm run electron:build:mac
+    # Build for Windows
+    npm run electron:build:win64
+    ```
 
 ## Disclaimer
 
-This tool is merely a graphical wrapper for the RePKG command-line tool, aimed at improving wallpaper extraction efficiency.
+This tool is merely a graphical wrapper for the RePKG command-line tool, aiming to improve the efficiency of wallpaper extraction.
 
-* This software **does NOT contain** any Wallpaper Engine resources.
-* Please use it in compliance with relevant copyright agreements.
-* The software is in the development stage. It is not recommended to run it on computers containing important data.
+*   This software **does not contain** any Wallpaper Engine assets.
+*   Please use it in compliance with relevant copyright agreements.
+*   The software is in the development stage. Running it on computers with critical data is not recommended.
 
 ## Related Links
 
-- [RePKG Original Project](https://github.com/notscuffed/repkg) - Thanks to notscuffed for the core tool support.
+*   [Original RePKG Project](https://github.com/notscuffed/repkg)
 
 ---
 
-> **Final Note**: This project was developed with AI assistance, aiming to provide an efficient wallpaper extractor. If you find it useful, a Star is welcome.
+> **Final Note**: This project was developed with the assistance of AI. If you find it useful, feel free to give it a Star.

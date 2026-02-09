@@ -1,6 +1,6 @@
 # RePKG ToolBox
 
-这是一个为 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面，可以在批量预览/解包wallpaper engine壁纸文件。或是为Mac设置动态/静态壁纸。
+这是一个基于 [RePKG](https://github.com/notscuffed/repkg) 命令行工具开发的现代化图形界面。添加了很多实用的小功能。可以批量预览/解包wallpaper engine壁纸文件，为壁纸设置分类收藏夹，以及为macOS设置静态/动态视频壁纸。
 
 <div align="center">
 
@@ -8,49 +8,64 @@
 
 </div>
 
-
 ## 核心特性
 
-- **可视化壁纸相册**。
+- **类wallpaper engine的可视化壁纸相册**。
 - **为macOS设置视频/图片壁纸**：可以右键预览的壁纸，程序会自动解包，展示当前壁纸所包含的资源文件，可以自由选择视频/图片以设置为Mac的桌面壁纸。
 
-> Windows不支持使用此软件设置壁纸
+> Windows不支持使用此软件设置壁纸，请使用Wallpaper Engine设置。
 
 - **分类搜索/查找**：根据年龄分级，壁纸类型，壁纸标题，自由对壁纸进行筛选，搜索。
-- **分类收藏夹**：现在，你可以把壁纸添加到你自定义的收藏夹中。并且随时通过筛选功能进行查看。
-- **智能解包与提取**：
-  - **PKG 自动处理**：针对 `.pkg` 格式进行深度解包。
-  - **非 PKG 智能扫描**：自动识别无需解包的壁纸，递归搜索并提取其子目录下的所有 `.png`、`.jpg`、`.mp4` 资源。
-  - **可选仅复制**：可以在选项中勾选仅复制，进行壁纸快速转储。
+- **分类收藏夹**：可以把壁纸添加到你自定义的收藏夹中。并且随时通过筛选功能进行查看。
 - **批量多选处理**：支持在预览界面通过鼠标多选，一键批量执行提取任务。
-- **实时日志系统**：详细记录每一个任务的处理进度与结果，支持批量容错。
 - **多语言支持**：点击右上角语言切换按钮，在中英文间切换。
+
+## 可选功能
+
+- **标签搜索**：可以从[HuggingFace](https://huggingface.co/SmilingWolf/wd-v1-4-moat-tagger-v2/tree/main)上下载tagger模型(只需要model.onnx和selected_tags.csv)。为每一个壁纸预览图进行打标签，以增强搜索。
+
+## 注意事项
+
+- 软件的**收藏夹**功能和**标签搜索**功能均会修改壁纸文件夹中的project.json。
+- 软件处于**测试阶段**，可能存在bug。
 
 ---
 
-## 🚀 快速开始
+## 快速开始
 
 ### 普通用户
 
 1. 从 [Releases](https://github.com/liaowwxx/Repkg-GUI/releases/) 下载对应系统的文件。
 2. **macOS 用户**：双击 `.app` 即可运行，或者使用 `.dmg`安装包。
-3. **Windows用户**：双击 `.exe`安装，或者使用便携版本，解压后运行 `RePKG WebUI.exe`。
+3. **Windows用户**：双击 `.exe`安装，或者使用便携版本，解压后运行 `RePKG ToolBox.exe`。
 
-> windows平台不支持设置壁纸功能，请使用wallpaper engine软件设置壁纸
+由于我没有Apple Developer Program账号，所以应用启动时会提示损坏，解决方法：
+
+```bash
+#首次启动前，在终端中运行以下指令：
+sudo xattr -rd com.apple.quarantine "/Applications/RePKG WebUI.app"
+```
+
+如果您担心安全性问题，也可以将项目克隆到本地，随后自行构建，这能避免应用被添加 com.apple.quarantine 属性，而被禁止运行。
 
 ### 开发者
 
-1. **安装依赖**
+1. **将项目克隆至本地**
+
+   ```bash
+   git clone git@github.com:liaowwxx/Repkg-Toolbox.git
+   ```
+2. **安装依赖**
 
    ```bash
    npm install
    ```
-2. **启动开发服务器**
+3. **启动开发服务器(可选，测试用)**
 
    ```bash
    npm run electron:dev
    ```
-3. **构建应用**
+4. **构建应用**
 
    ```bash
    # 构建 macOS 版
@@ -58,20 +73,6 @@
    # 构建 Windows 版
    npm run electron:build:win64
    ```
-
-## 项目结构
-
-```text
-repkg-webui/
-├── electron/          # Electron 主进程与预加载脚本
-│   ├── main.js       # 处理文件扫描、递归复制等核心逻辑
-│   └── preload.js    # 跨进程 API 暴露
-├── src/              # React 应用源码
-│   ├── components/   # 包含 ExtractView (主界面)、Gallery 等组件
-│   └── hooks/        # useRepkg 封装了与命令行的交互
-├── resources/        # 各平台 RePKG 二进制文件
-└── build/            # 应用图标与安装配置
-```
 
 ## 免责声明
 
@@ -83,8 +84,8 @@ repkg-webui/
 
 ## 相关链接
 
-- [RePKG 原项目](https://github.com/notscuffed/repkg) - 感谢 notscuffed 的核心工具支持。
+- [RePKG 原项目](https://github.com/notscuffed/repkg) 
 
 ---
 
-> **写在最后**：本项目由 AI 辅助开发，旨在提供一个高效的壁纸提取器。如果您觉得有用，欢迎 Star 关注。
+> **写在最后**：本项目由 AI 辅助开发。如果您觉得有用，欢迎 Star 关注。

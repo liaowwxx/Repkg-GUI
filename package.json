@@ -1,7 +1,7 @@
 {
-  "name": "repkg-toolbox",
-  "version": "2.4.1",
-  "description": "RePKG Toolbox",
+  "name": "repkg-ToolBox",
+  "version": "2.5.0",
+  "description": "RePKG-Toolbox",
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
@@ -48,8 +48,8 @@
     "onnxruntime-node": "^1.20.0"
   },
   "build": {
-    "appId": "com.repkg.webui",
-    "productName": "RePKG WebUI",
+    "appId": "com.repkg.toolbox",
+    "productName": "RePKG-ToolBox",
     "directories": {
       "output": "dist-electron"
     },
@@ -106,7 +106,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "RePKG WebUI"
+      "shortcutName": "RePKG-ToolBox"
     }
   }
 }
