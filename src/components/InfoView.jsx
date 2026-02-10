@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { FolderOpen, File, Play, Search } from 'lucide-react';
 import { useRepkg } from '../hooks/useRepkg';
+import { translations } from '../utils/i18n';
 
-function InfoView() {
+function InfoView({ lang }) {
+  const t = translations[lang];
   const [infoPath, setInfoPath] = useState('');
   const [sortEnabled, setSortEnabled] = useState(false);
   const [sortBy, setSortBy] = useState('name');
@@ -15,7 +17,7 @@ function InfoView() {
 
   const handleSelectFile = async () => {
     if (!window.electronAPI) {
-      alert('文件选择功能仅在 Electron 环境中可用');
+      alert(t.electronOnly);
       return;
     }
     const path = await window.electronAPI.selectFile();
@@ -24,7 +26,7 @@ function InfoView() {
 
   const handleSelectFolder = async () => {
     if (!window.electronAPI) {
-      alert('文件夹选择功能仅在 Electron 环境中可用');
+      alert(t.electronOnly);
       return;
     }
     const path = await window.electronAPI.selectFolder();
@@ -33,7 +35,7 @@ function InfoView() {
 
   const handleGetInfo = async () => {
     if (!infoPath) {
-      alert('请输入有效的输入路径');
+      alert(t.invalidInputPath);
       return;
     }
 
@@ -52,12 +54,12 @@ function InfoView() {
   return (
     <div className="space-y-6">
       <div className="card">
-        <h2 className="text-xl font-semibold mb-4">查看信息 (Info)</h2>
+        <h2 className="text-xl font-semibold mb-4">{t.viewInfo}</h2>
 
         {/* Input Path */}
         <div className="mb-6">
           <label className="block text-sm font-medium text-slate-700 mb-2">
-            输入路径
+            {t.inputPath}
           </label>
           <div className="flex gap-2">
             <input
@@ -72,14 +74,14 @@ function InfoView() {
               className="btn-secondary flex items-center gap-2"
             >
               <File className="w-4 h-4" />
-              文件
+              {t.file}
             </button>
             <button
               onClick={handleSelectFolder}
               className="btn-secondary flex items-center gap-2"
             >
               <FolderOpen className="w-4 h-4" />
-              目录
+              {t.directory}
             </button>
           </div>
         </div>
@@ -89,7 +91,7 @@ function InfoView() {
           <div>
             <h3 className="text-lg font-medium mb-4 flex items-center gap-2">
               <Search className="w-5 h-5" />
-              排序设置
+              {t.sortSettings}
             </h3>
             <div className="space-y-4">
               <label className="flex items-center gap-2 cursor-pointer">
@@ -99,21 +101,21 @@ function InfoView() {
                   onChange={(e) => setSortEnabled(e.target.checked)}
                   className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
                 />
-                <span className="text-sm">启用排序 (-s)</span>
+                <span className="text-sm">{t.enableSort}</span>
               </label>
               {sortEnabled && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
-                    排序方式 (-b)
+                    {t.sortBy}
                   </label>
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value)}
                     className="input-field"
                   >
-                    <option value="name">名称</option>
-                    <option value="extension">扩展名</option>
-                    <option value="size">大小</option>
+                    <option value="name">{t.sortName}</option>
+                    <option value="extension">{t.sortExtension}</option>
+                    <option value="size">{t.sortSize}</option>
                   </select>
                 </div>
               )}
@@ -122,7 +124,7 @@ function InfoView() {
 
           {/* Display Settings */}
           <div>
-            <h3 className="text-lg font-medium mb-4">显示设置</h3>
+            <h3 className="text-lg font-medium mb-4">{t.displaySettings}</h3>
             <div className="space-y-3">
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -131,7 +133,7 @@ function InfoView() {
                   onChange={(e) => setPrintEntries(e.target.checked)}
                   className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
                 />
-                <span className="text-sm">打印包内条目 (-e)</span>
+                <span className="text-sm">{t.printEntries}</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -140,7 +142,7 @@ function InfoView() {
                   onChange={(e) => setTexInfo(e.target.checked)}
                   className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
                 />
-                <span className="text-sm">查看 TEX 详细信息 (-t)</span>
+                <span className="text-sm">{t.texInfo}</span>
               </label>
             </div>
           </div>
@@ -148,11 +150,11 @@ function InfoView() {
 
         {/* Filter and Specific Info */}
         <div className="mt-6 p-4 bg-slate-50 rounded-lg">
-          <h3 className="text-lg font-medium mb-4">过滤与特定信息</h3>
+          <h3 className="text-lg font-medium mb-4">{t.filterInfo}</h3>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                项目信息字段 (-p)
+                {t.projectInfoFields}
               </label>
               <input
                 type="text"
@@ -164,7 +166,7 @@ function InfoView() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                标题过滤 (--title-filter)
+                {t.titleFilter}
               </label>
               <input
                 type="text"
@@ -185,7 +187,7 @@ function InfoView() {
             className="btn-primary flex items-center gap-2 w-full justify-center"
           >
             <Play className="w-5 h-5" />
-            {isRunning ? '执行中...' : '获取信息'}
+            {isRunning ? t.executing : t.getInfo}
           </button>
         </div>
       </div>
@@ -193,7 +195,7 @@ function InfoView() {
       {/* Output Log */}
       {output && (
         <div className="card">
-          <h3 className="text-lg font-medium mb-4">输出日志</h3>
+          <h3 className="text-lg font-medium mb-4">{t.outputLog}</h3>
           <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-sm overflow-auto max-h-96">
             <pre className="whitespace-pre-wrap">{output}</pre>
           </div>

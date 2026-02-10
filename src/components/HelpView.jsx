@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Play, BookOpen } from 'lucide-react';
 import { useRepkg } from '../hooks/useRepkg';
+import { translations } from '../utils/i18n';
 
-function HelpView() {
+function HelpView({ lang }) {
+  const t = translations[lang];
   const [helpType, setHelpType] = useState('general');
 
   const { runCommand, output, isRunning } = useRepkg();
@@ -22,12 +24,12 @@ function HelpView() {
       <div className="card">
         <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
           <BookOpen className="w-5 h-5" />
-          帮助文档
+          {t.helpDocs}
         </h2>
 
         <div className="mb-6">
           <label className="block text-sm font-medium text-slate-700 mb-2">
-            查看帮助详情
+            {t.viewHelpDetails}
           </label>
           <div className="flex gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -39,7 +41,7 @@ function HelpView() {
                 onChange={(e) => setHelpType(e.target.value)}
                 className="w-4 h-4 text-primary-600 focus:ring-primary-500"
               />
-              <span>通用帮助</span>
+              <span>{t.generalHelp}</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -50,7 +52,7 @@ function HelpView() {
                 onChange={(e) => setHelpType(e.target.value)}
                 className="w-4 h-4 text-primary-600 focus:ring-primary-500"
               />
-              <span>Extract 帮助</span>
+              <span>{t.extractHelp}</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -61,7 +63,7 @@ function HelpView() {
                 onChange={(e) => setHelpType(e.target.value)}
                 className="w-4 h-4 text-primary-600 focus:ring-primary-500"
               />
-              <span>Info 帮助</span>
+              <span>{t.infoHelp}</span>
             </label>
           </div>
         </div>
@@ -72,14 +74,14 @@ function HelpView() {
           className="btn-primary flex items-center gap-2 w-full justify-center"
         >
           <Play className="w-5 h-5" />
-          {isRunning ? '执行中...' : '获取帮助'}
+          {isRunning ? t.executing : t.getHelp}
         </button>
       </div>
 
       {/* Output Log */}
       {output && (
         <div className="card">
-          <h3 className="text-lg font-medium mb-4">帮助信息</h3>
+          <h3 className="text-lg font-medium mb-4">{t.helpInfo}</h3>
           <div className="bg-slate-900 text-slate-100 p-4 rounded-lg font-mono text-sm overflow-auto max-h-96">
             <pre className="whitespace-pre-wrap">{output}</pre>
           </div>

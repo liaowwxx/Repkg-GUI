@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { FolderOpen, File, Play, Settings, ChevronDown, Check, Image as ImageIcon, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FolderOpen, File, Play, Settings, ChevronDown, Check, Image as ImageIcon, Search, Filter, ChevronLeft, ChevronRight, X, Monitor, Heart, Bookmark, Plus, Trash2 } from 'lucide-react';
 import { useRepkg } from '../hooks/useRepkg';
+import { translations } from '../utils/i18n';
 
 const ITEMS_PER_PAGE = 32;
 
-function ExtractView() {
+function ExtractView({ lang }) {
+  const t = translations[lang];
   const [inputPath, setInputPath] = useState(() => localStorage.getItem('repkg-inputPath') || '');
   const [outputDir, setOutputDir] = useState(() => localStorage.getItem('repkg-outputDir') || '');
   const [ignoreExts, setIgnoreExts] = useState(() => localStorage.getItem('repkg-ignoreExts') || '');
@@ -26,112 +28,181 @@ function ExtractView() {
   const [justCopy, setJustCopy] = useState(() => localStorage.getItem('repkg-justCopy') === 'true');
   const [useName, setUseName] = useState(() => localStorage.getItem('repkg-useName') === 'true');
   const [showAdvanced, setShowAdvanced] = useState(() => localStorage.getItem('repkg-showAdvanced') === 'true');
+  const [taggerModelPath, setTaggerModelPath] = useState(() => localStorage.getItem('repkg-taggerModelPath') || '');
+  const [isTaggerRunning, setIsTaggerRunning] = useState(false);
+  const [taggerProgress, setTaggerProgress] = useState('');
   
   const stopRef = useRef(false);
   const [wallpapers, setWallpapers] = useState([]);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isScanning, setIsScanning] = useState(false);
 
+  // Context Menu state
+  const [contextMenu, setContextMenu] = useState(null);
+  
+  // Asset Modal state
+  const [assetModal, setAssetModal] = useState(null); 
+  const [isSettingWallpaper, setIsSettingWallpaper] = useState(false);
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Collection Modal state
+  const [collectionModal, setCollectionModal] = useState({ show: false, ids: [] });
+
   // Search and Filter state
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchText, setSearchText] = useState('');       // 标题/描述搜索
+  const [searchTags, setSearchTags] = useState('');       // 标签搜索（逗号分隔）
   const [typeFilter, setTypeFilter] = useState('all');
   const [ratingFilter, setRatingFilter] = useState('all');
+  const [collectionFilter, setCollectionFilter] = useState('all');
+  const [allTagNames, setAllTagNames] = useState([]);
+  const [tagSuggestionsOpen, setTagSuggestionsOpen] = useState(false);
+  const [tagSuggestionIndex, setTagSuggestionIndex] = useState(0);
+  const searchInputRef = useRef(null);
+  const tagSuggestionsRef = useRef(null);
   
   const { runCommand, stopCommand, output, isRunning, setOutput, setIsRunning } = useRepkg();
 
-  // Sanitize folder name
+  // 从模型目录加载标签列表（用于搜索待选）
+  useEffect(() => {
+    if (!taggerModelPath?.trim() || !window.electronAPI?.getTaggerTags) {
+      setAllTagNames([]);
+      return;
+    }
+    let cancelled = false;
+    window.electronAPI.getTaggerTags(taggerModelPath.trim()).then((names) => {
+      if (!cancelled && Array.isArray(names)) setAllTagNames(names);
+    });
+    return () => { cancelled = true; };
+  }, [taggerModelPath]);
+
   const sanitizePath = (name) => {
     return name.replace(/[\\/:*?"<>|]/g, '');
   };
 
-  // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, typeFilter, ratingFilter]);
+  }, [searchText, searchTags, typeFilter, ratingFilter, collectionFilter, wallpapers.length]);
 
-  // Persist paths to localStorage
   useEffect(() => {
     localStorage.setItem('repkg-inputPath', inputPath);
-  }, [inputPath]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-outputDir', outputDir);
-  }, [outputDir]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-ignoreExts', ignoreExts);
-  }, [ignoreExts]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-onlyExts', onlyExts);
-  }, [onlyExts]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-convertTex', convertTex);
-  }, [convertTex]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-noTexConvert', noTexConvert);
-  }, [noTexConvert]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-overwrite', overwrite);
-  }, [overwrite]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-debugInfo', debugInfo);
-  }, [debugInfo]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-recursive', recursive);
-  }, [recursive]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-singleDir', singleDir);
-  }, [singleDir]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-skipErrors', skipErrors);
-  }, [skipErrors]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-copyProject', copyProject);
-  }, [copyProject]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-justCopy', justCopy);
-  }, [justCopy]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-useName', useName);
-  }, [useName]);
-
-  useEffect(() => {
     localStorage.setItem('repkg-showAdvanced', showAdvanced);
-  }, [showAdvanced]);
+    localStorage.setItem('repkg-collectionFilter', collectionFilter);
+    localStorage.setItem('repkg-taggerModelPath', taggerModelPath);
+  }, [inputPath, outputDir, ignoreExts, onlyExts, convertTex, noTexConvert, overwrite, debugInfo, recursive, singleDir, skipErrors, copyProject, justCopy, useName, showAdvanced, collectionFilter, taggerModelPath]);
 
-  // Filtered wallpapers
   const filteredWallpapers = useMemo(() => {
     return wallpapers.filter(wp => {
-      const matchesSearch = !searchTerm || 
-        wp.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        wp.description?.toLowerCase().includes(searchTerm.toLowerCase());
-      
+      const text = searchText?.trim() || '';
+      const tagList = Array.isArray(wp.preview_tagger) ? wp.preview_tagger : (typeof wp.preview_tagger === 'string' ? wp.preview_tagger.split(',').map(s => s.trim()).filter(Boolean) : []);
+      const wpTagSet = new Set(tagList.map(t => t.toLowerCase()));
+      const matchesText = !text ||
+        wp.title?.toLowerCase().includes(text.toLowerCase()) ||
+        wp.description?.toLowerCase().includes(text.toLowerCase());
+      const tagsRaw = searchTags?.trim() || '';
+      const requiredTags = tagsRaw ? tagsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const matchesTags = requiredTags.length === 0 || requiredTags.every(tag => wpTagSet.has(tag.toLowerCase()));
       const matchesType = typeFilter === 'all' || wp.type === typeFilter;
       const matchesRating = ratingFilter === 'all' || wp.contentrating === ratingFilter;
-      
-      return matchesSearch && matchesType && matchesRating;
+      const matchesCollection = collectionFilter === 'all' || (wp.collections && wp.collections.includes(collectionFilter));
+      return matchesText && matchesTags && matchesType && matchesRating && matchesCollection;
     });
-  }, [wallpapers, searchTerm, typeFilter, ratingFilter]);
+  }, [wallpapers, searchText, searchTags, typeFilter, ratingFilter, collectionFilter]);
 
-  // Unique types and ratings for filters
+  // 当前输入“段”（最后一个逗号后的部分），用于待选匹配
+  const searchTagToken = useMemo(() => {
+    const parts = (searchTags || '').split(',');
+    return (parts[parts.length - 1] || '').trim();
+  }, [searchTags]);
+
+  // 待选标签：以当前 token 开头的标签，最多 20 条
+  const tagSuggestions = useMemo(() => {
+    if (!searchTagToken || allTagNames.length === 0) return [];
+    const lower = searchTagToken.toLowerCase();
+    return allTagNames.filter(tag => tag.toLowerCase().startsWith(lower)).slice(0, 20);
+  }, [allTagNames, searchTagToken]);
+
+  const applyTagSuggestion = (tag) => {
+    const parts = (searchTags || '').split(',');
+    parts[parts.length - 1] = tag;
+    const joined = parts.map(p => p.trim()).filter(Boolean).join(', ');
+    setSearchTags(joined ? joined + ', ' : tag + ', ');
+    setTagSuggestionsOpen(false);
+    setTagSuggestionIndex(0);
+    searchInputRef.current?.focus();
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (!tagSuggestionsOpen || tagSuggestions.length === 0) {
+      if (e.key === 'Escape') setTagSuggestionsOpen(false);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setTagSuggestionIndex(i => Math.min(i + 1, tagSuggestions.length - 1));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setTagSuggestionIndex(i => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === 'Tab' || e.key === 'Enter') {
+      e.preventDefault();
+      const sel = tagSuggestions[tagSuggestionIndex];
+      if (sel) applyTagSuggestion(sel);
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setTagSuggestionsOpen(false);
+    }
+  };
+
+  // 标签输入变化时：有匹配则打开待选并重置选中下标
+  const handleSearchTagsChange = (e) => {
+    const v = e.target.value;
+    setSearchTags(v);
+    const parts = (v || '').split(',');
+    const token = (parts[parts.length - 1] || '').trim();
+    if (token && allTagNames.some(t => t.toLowerCase().startsWith(token.toLowerCase()))) {
+      setTagSuggestionsOpen(true);
+      setTagSuggestionIndex(0);
+    } else {
+      setTagSuggestionsOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    setTagSuggestionIndex(0);
+  }, [tagSuggestions.length]);
+
   const types = useMemo(() => ['all', ...new Set(wallpapers.map(w => w.type))].sort(), [wallpapers]);
   const ratings = useMemo(() => ['all', ...new Set(wallpapers.map(w => w.contentrating))].sort(), [wallpapers]);
+  const allCollections = useMemo(() => {
+    const collections = new Set();
+    wallpapers.forEach(wp => {
+      if (wp.collections) {
+        wp.collections.forEach(c => collections.add(c));
+      }
+    });
+    return ['all', ...Array.from(collections).sort()];
+  }, [wallpapers]);
 
-  // Pagination calculations
   const totalPages = Math.ceil(filteredWallpapers.length / ITEMS_PER_PAGE);
   const pagedWallpapers = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -142,27 +213,19 @@ function ExtractView() {
     const scanPath = async () => {
       if (inputPath && window.electronAPI?.scanWallpapers) {
         setIsScanning(true);
-        setWallpapers([]); // Clear current wallpapers
-        setSelectedIds(new Set()); // Reset selection
+        setWallpapers([]);
+        setSelectedIds(new Set());
         
         try {
-          // Listen for incremental updates
           const handleNewWallpaper = (wallpaper) => {
             setWallpapers(prev => {
-              // Avoid duplicates just in case
               if (prev.some(w => w.id === wallpaper.id)) return prev;
               return [...prev, wallpaper];
             });
           };
-          
           window.electronAPI.onWallpaperFound(handleNewWallpaper);
-          
           const results = await window.electronAPI.scanWallpapers(inputPath);
-          
-          // Cleanup listener
           window.electronAPI.removeWallpaperFoundListener();
-          
-          // Optionally set the final results to ensure consistency
           if (results && results.length > 0) {
             setWallpapers(results);
           }
@@ -178,7 +241,6 @@ function ExtractView() {
       }
     };
     scanPath();
-    
     return () => {
       if (window.electronAPI?.removeWallpaperFoundListener) {
         window.electronAPI.removeWallpaperFoundListener();
@@ -188,11 +250,8 @@ function ExtractView() {
 
   const toggleSelect = (id) => {
     const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
     setSelectedIds(newSelected);
   };
 
@@ -205,53 +264,205 @@ function ExtractView() {
   };
 
   const handleSelectFile = async () => {
-    if (!window.electronAPI) {
-      alert('文件选择功能仅在 Electron 环境中可用');
-      return;
-    }
     const path = await window.electronAPI.selectFile();
     if (path) setInputPath(path);
   };
 
   const handleSelectFolder = async () => {
-    if (!window.electronAPI) {
-      alert('文件夹选择功能仅在 Electron 环境中可用');
-      return;
-    }
     const path = await window.electronAPI.selectFolder();
     if (path) setInputPath(path);
   };
 
   const handleSelectOutput = async () => {
-    if (!window.electronAPI) {
-      alert('文件夹选择功能仅在 Electron 环境中可用');
-      return;
-    }
     const path = await window.electronAPI.selectFolder();
     if (path) setOutputDir(path);
   };
 
-  const handleStop = async () => {
-    stopRef.current = true;
-    await stopCommand();
+  const handleSelectTaggerModel = async () => {
+    const path = await window.electronAPI.selectTaggerModel();
+    if (path) setTaggerModelPath(path);
+  };
+
+  const handleGenerateTags = async () => {
+    if (!taggerModelPath?.trim()) {
+      alert(lang === 'zh' ? '请先选择打标签模型目录（含 model.onnx 和 selected_tags.csv）' : 'Please select the tagger model directory first (with model.onnx and selected_tags.csv)');
+      return;
+    }
+    const paths = selectedIds.size > 0
+      ? wallpapers.filter(w => selectedIds.has(w.id)).map(w => w.path)
+      : filteredWallpapers.map(w => w.path);
+    if (paths.length === 0) {
+      alert(lang === 'zh' ? '没有可处理的壁纸' : 'No wallpapers to process');
+      return;
+    }
+    setIsTaggerRunning(true);
+    setTaggerProgress('');
+    const progressHandler = ({ current, total, name, error }) => {
+      const msg = error
+        ? `${current}/${total}: ${name} - ${error}`
+        : t.taggerProgress.replace('{current}', current).replace('{total}', total).replace('{name}', name);
+      setTaggerProgress(msg);
+    };
+    window.electronAPI.onTaggerProgress(progressHandler);
+    try {
+      const res = await window.electronAPI.runPreviewTagger({
+        modelDir: taggerModelPath.trim(),
+        wallpaperPaths: paths,
+        threshold: 0.35,
+      });
+      window.electronAPI.removeTaggerProgressListener();
+      if (res.ok) {
+        const resultsMap = new Map((res.results || []).map(r => [r.path, r]));
+        setWallpapers(prev => prev.map(wp => {
+          const r = resultsMap.get(wp.path);
+          if (r && r.success && r.tags) return { ...wp, preview_tagger: r.tags };
+          return wp;
+        }));
+        setTaggerProgress(t.taggerDone);
+        setTimeout(() => setTaggerProgress(''), 2000);
+      } else {
+        setTaggerProgress(t.taggerError + ': ' + (res.error || ''));
+        alert((res.error) || t.taggerError);
+      }
+    } catch (err) {
+      window.electronAPI.removeTaggerProgressListener();
+      setTaggerProgress(t.taggerError + ': ' + (err.message || err));
+      alert(t.taggerError + ': ' + (err.message || err));
+    } finally {
+      setIsTaggerRunning(false);
+    }
+  };
+
+  const handleUpdateCollections = async (wallpaperIds, collectionName, action) => {
+    const selectedWallpapers = wallpapers.filter(w => wallpaperIds.includes(w.id));
+    const paths = selectedWallpapers.map(w => w.path);
+    
+    try {
+      const results = await window.electronAPI.updateWallpaperCollections({
+        wallpaperPaths: paths,
+        collectionName,
+        action
+      });
+
+      // Update local state
+      setWallpapers(prev => prev.map(wp => {
+        const res = results.find(r => r.path === wp.path);
+        if (res && res.success) {
+          return { ...wp, collections: res.collections };
+        }
+        return wp;
+      }));
+    } catch (err) {
+      console.error('更新收藏夹失败:', err);
+      alert(`${t.operationFailed}: ${err.message}`);
+    }
+  };
+
+  const handleDeleteCollection = async (collectionName) => {
+    if (!collectionName || collectionName === 'all') return;
+    if (!confirm(t.deleteCollectionConfirm.replace('{name}', collectionName))) return;
+
+    try {
+      const result = await window.electronAPI.deleteCollection({
+        rootPath: inputPath,
+        collectionName
+      });
+
+      if (result.success) {
+        // Update local state for all wallpapers
+        setWallpapers(prev => prev.map(wp => ({
+          ...wp,
+          collections: (wp.collections || []).filter(c => c !== collectionName)
+        })));
+        if (collectionFilter === collectionName) {
+          setCollectionFilter('all');
+        }
+      } else {
+        alert('删除失败: ' + result.error);
+      }
+    } catch (err) {
+      console.error('删除收藏夹失败:', err);
+      alert('操作失败: ' + err.message);
+    }
+  };
+
+  const handleContextMenu = (e, wp) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, wp });
+  };
+
+  useEffect(() => {
+    const handleGlobalClick = () => setContextMenu(null);
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
+
+  const handleOpenFolder = async (wp) => {
+    if (window.electronAPI?.openPath) {
+      await window.electronAPI.openPath(wp.path);
+    }
+  };
+
+  const handleSetAsWallpaper = async (wp) => {
+    if (!outputDir) {
+      alert(t.selectOutputDirFirst);
+      return;
+    }
+    setIsSettingWallpaper(true);
+    try {
+      const cachePath = await window.electronAPI.getCacheDir(outputDir);
+      const wpCachePath = `${cachePath}/${sanitizePath(wp.title || wp.name)}`;
+      await window.electronAPI.ensureDir(wpCachePath);
+
+      if (wp.isPkg) {
+        const inputPath = wp.pkgPath || wp.path;
+        const args = ['extract', '-o', wpCachePath, '-t', '-r', '--overwrite', inputPath];
+        const result = await window.electronAPI.runRepkg(args);
+        if (result.code !== 0 && result.code !== -1) {
+          throw new Error(`${t.extractFailed}: ${result.stderr}`);
+        }
+      } else {
+        await window.electronAPI.copyWallpaperAssets({ srcPath: wp.path, destDir: wpCachePath });
+      }
+
+      const assets = await window.electronAPI.getLargestAssets(wpCachePath);
+      if (assets.length === 0) {
+        alert(t.noAssetsFound);
+        return;
+      }
+      setAssetModal({ wp, assets });
+    } catch (err) {
+      console.error('设置壁纸流程出错:', err);
+      alert(`${t.operationFailed}: ${err.message}`);
+    } finally {
+      setIsSettingWallpaper(false);
+    }
+  };
+
+  const selectAssetAsWallpaper = async (asset, options = {}) => {
+    try {
+      const result = await window.electronAPI.setWallpaper(asset.path, options);
+      if (result.success) {
+        alert(t.setWallpaperSuccess);
+        setAssetModal(null);
+      } else {
+        alert(`${t.setWallpaperFailed}: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`${t.operationFailed}: ${err.message}`);
+    }
   };
 
   const handleExtract = async () => {
     if (isRunning) {
-      await handleStop();
+      stopRef.current = true;
+      await stopCommand();
       return;
     }
-
     if (!inputPath) {
-      alert('请输入有效的输入路径');
+      alert(t.invalidInputPath);
       return;
     }
-
-    if (justCopy && !outputDir) {
-      alert('请先选择输出目录');
-      return;
-    }
-
     const commonArgs = ['extract'];
     if (outputDir) commonArgs.push('-o', outputDir);
     if (ignoreExts) commonArgs.push('-i', ignoreExts);
@@ -270,294 +481,178 @@ function ExtractView() {
       setIsRunning(true);
       stopRef.current = false;
       setOutput(''); 
-      
       for (const wp of selectedWallpapers) {
-        // 检查是否请求了停止
         if (stopRef.current) break;
-
-        const originalName = wp.title || wp.name;
-        const displayName = sanitizePath(originalName);
-        
-        // 先添加一个“执行中”的状态
-        setOutput(prev => prev + `${displayName} - ⏳ 正在提取...\n`);
-        
+        const displayName = sanitizePath(wp.title || wp.name);
+        setOutput(prev => prev + `${displayName} - ⏳ ${lang === 'zh' ? '正在提取...' : 'Extracting...'}\n`);
         if (justCopy) {
-          try {
-            const result = await window.electronAPI.copyDirectory({
-              srcPath: wp.path,
-              destDir: outputDir,
-              customName: displayName
-            });
-            
-            setOutput(prev => {
-              const lines = prev.trim().split('\n');
-              const filtered = lines.filter(l => !l.startsWith(displayName));
-              const status = result.success ? '✅ 提取成功' : `❌ 提取失败: ${result.error}`;
-              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ${status}\n`;
-            });
-          } catch (err) {
-            setOutput(prev => {
-              const lines = prev.trim().split('\n');
-              const filtered = lines.filter(l => !l.startsWith(displayName));
-              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ❌ 提取错误: ${err.message}\n`;
-            });
-          }
+          const result = await window.electronAPI.copyDirectory({ srcPath: wp.path, destDir: outputDir, customName: displayName });
+          setOutput(prev => prev.replace(`${displayName} - ⏳ ${lang === 'zh' ? '正在提取...' : 'Extracting...'}\n`, `${displayName} - ${result.success ? (lang === 'zh' ? '✅ 提取成功' : '✅ Success') : (lang === 'zh' ? '❌ 失败' : '❌ Failed')}\n`));
         } else if (wp.isPkg) {
           const targetDir = outputDir ? (singleDir ? outputDir : `${outputDir}/${displayName}`) : `${wp.path}/extracted`;
           const currentArgs = [...commonArgs];
-          
+          const oIdx = currentArgs.indexOf('-o');
           if (!singleDir) {
-            const oIndex = currentArgs.indexOf('-o');
-            if (oIndex !== -1) {
-              currentArgs[oIndex + 1] = targetDir;
-            } else {
-              currentArgs.push('-o', targetDir);
-            }
+            if (oIdx !== -1) currentArgs[oIdx + 1] = targetDir;
+            else currentArgs.push('-o', targetDir);
           }
-          
-          try {
-            const result = await window.electronAPI.runRepkg([...currentArgs, wp.path]);
-            setOutput(prev => {
-              const lines = prev.trim().split('\n');
-              const filtered = lines.filter(l => !l.startsWith(displayName));
-              const status = result.code === 0 ? '✅ 提取成功' : (result.code === -1 ? '⏹️ 已停止' : `❌ 提取失败 (代码 ${result.code})`);
-              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ${status}\n`;
-            });
-            if (result.code === -1) break; // 停止循环
-          } catch (err) {
-            setOutput(prev => {
-              const lines = prev.trim().split('\n');
-              const filtered = lines.filter(l => !l.startsWith(displayName));
-              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ❌ 提取错误: ${err.message}\n`;
-            });
-          }
-        } else {
-          const targetDir = outputDir ? (singleDir ? outputDir : `${outputDir}/${displayName}`) : `${wp.path}/extracted`;
-          
-          try {
-            const result = await window.electronAPI.copyWallpaperAssets({
-              srcPath: wp.path,
-              destDir: targetDir
-            });
-            
-            setOutput(prev => {
-              const lines = prev.trim().split('\n');
-              const filtered = lines.filter(l => !l.startsWith(displayName));
-              const status = result.success ? '✅ 提取成功' : `❌ 提取失败: ${result.error}`;
-              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ${status}\n`;
-            });
-          } catch (err) {
-            setOutput(prev => {
-              const lines = prev.trim().split('\n');
-              const filtered = lines.filter(l => !l.startsWith(displayName));
-              return filtered.join('\n') + (filtered.length > 0 ? '\n' : '') + `${displayName} - ❌ 提取错误: ${err.message}\n`;
-            });
-          }
+          const result = await window.electronAPI.runRepkg([...currentArgs, wp.path]);
+          setOutput(prev => prev.replace(`${displayName} - ⏳ ${lang === 'zh' ? '正在提取...' : 'Extracting...'}\n`, `${displayName} - ${result.code === 0 ? (lang === 'zh' ? '✅ 提取成功' : '✅ Success') : (lang === 'zh' ? '❌ 失败' : '❌ Failed')}\n`));
         }
       }
       setIsRunning(false);
-      stopRef.current = false;
     } else {
       await runCommand([...commonArgs, inputPath]);
     }
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className={`grid grid-cols-1 ${wallpapers.length > 0 ? 'lg:grid-cols-3' : ''} gap-6`}>
-        {/* Left Side: Wallpaper Gallery */}
+    <div className="flex flex-col gap-4 h-full w-full overflow-hidden">
+      <div className={`grid grid-cols-1 ${wallpapers.length > 0 ? 'lg:grid-cols-4' : ''} gap-4 h-full w-full min-h-0`}>
+        {/* Left Side: Wallpaper Gallery - Expanded to col-span-3 for more space */}
         {wallpapers.length > 0 && (
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <div className="card h-full flex flex-col">
-              <div className="flex flex-col gap-4 mb-4">
+          <div className="lg:col-span-3 flex flex-col min-h-0">
+            <div className="card h-full flex flex-col overflow-hidden">
+              <div className="flex flex-col gap-3 mb-4 shrink-0">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <h2 className="text-lg font-bold flex items-center gap-2">
                     <ImageIcon className="w-5 h-5 text-primary-600" />
-                    壁纸预览 ({filteredWallpapers.length}/{wallpapers.length})
+                    {t.wallpaperPreview} ({filteredWallpapers.length})
                   </h2>
-                  <button 
-                    onClick={selectAll}
-                    className="text-sm font-medium text-primary-600 hover:text-primary-700"
-                  >
-                    {selectedIds.size === filteredWallpapers.length && filteredWallpapers.length > 0 ? '取消全选' : '全选过滤项'}
+                  <button onClick={selectAll} className="text-xs font-bold text-primary-600 hover:text-primary-700">
+                    {selectedIds.size === filteredWallpapers.length && filteredWallpapers.length > 0 ? t.deselectAll : t.selectAll}
                   </button>
                 </div>
-
-                {/* Search and Filters */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="relative col-span-1 sm:col-span-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none z-10" />
                     <input
                       type="text"
-                      placeholder="搜索标题或描述..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="input-field pl-9 py-1.5 text-sm"
+                      placeholder={t.searchTextPlaceholder}
+                      value={searchText}
+                      onChange={(e) => setSearchText(e.target.value)}
+                      className="input-field pl-9 py-1 text-xs w-full"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-                    <select
-                      value={typeFilter}
-                      onChange={(e) => setTypeFilter(e.target.value)}
-                      className="input-field py-1.5 text-sm"
-                    >
-                      <option value="all">所有类型</option>
-                      {types.filter(t => t !== 'all').map(t => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+                  <div className="relative" ref={tagSuggestionsRef}>
+                    <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none z-10" />
+                    <input
+                      ref={searchInputRef}
+                      type="text"
+                      placeholder={t.searchTagsPlaceholder}
+                      value={searchTags}
+                      onChange={handleSearchTagsChange}
+                      onKeyDown={handleSearchKeyDown}
+                      onFocus={() => searchTagToken && tagSuggestions.length > 0 && setTagSuggestionsOpen(true)}
+                      onBlur={() => setTimeout(() => setTagSuggestionsOpen(false), 150)}
+                      className="input-field pl-9 py-1 text-xs w-full"
+                    />
+                    {tagSuggestionsOpen && tagSuggestions.length > 0 && (
+                      <ul className="absolute left-0 right-0 top-full mt-0.5 bg-white border border-slate-200 shadow-lg rounded-lg py-1 max-h-48 overflow-y-auto z-50 custom-scrollbar">
+                        {tagSuggestions.map((tag, i) => (
+                          <li key={tag}>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => { e.preventDefault(); applyTagSuggestion(tag); }}
+                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-primary-50 ${i === tagSuggestionIndex ? 'bg-primary-100 text-primary-800' : 'text-slate-700'}`}
+                            >
+                              {tag}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-                    <select
-                      value={ratingFilter}
-                      onChange={(e) => setRatingFilter(e.target.value)}
-                      className="input-field py-1.5 text-sm"
-                    >
-                      <option value="all">所有分级</option>
-                      {ratings.filter(r => r !== 'all').map(r => (
-                        <option key={r} value={r}>{r}</option>
-                      ))}
+                  <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="input-field py-1 text-xs">
+                    <option value="all">{t.allTypes}</option>
+                    {types.filter(t => t !== 'all').map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <select value={ratingFilter} onChange={(e) => setRatingFilter(e.target.value)} className="input-field py-1 text-xs">
+                    <option value="all">{t.allRatings}</option>
+                    {ratings.filter(r => r !== 'all').map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <div className="flex gap-1">
+                    <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} className="input-field py-1 text-xs flex-1">
+                      <option value="all">{t.allCollections}</option>
+                      {allCollections.filter(c => c !== 'all').map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
+                    {collectionFilter !== 'all' && (
+                      <button onClick={() => handleDeleteCollection(collectionFilter)} title={lang === 'zh' ? '删除当前收藏夹' : 'Delete current collection'} className="p-1 text-red-500 hover:bg-red-50 rounded">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
               
-              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar" style={{ maxHeight: '600px' }}>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar relative">
+                {selectedIds.size > 0 && (
+                  <div className="sticky top-0 z-20 bg-primary-600 text-white p-2 mb-3 rounded-lg flex items-center justify-between shadow-lg animate-in slide-in-from-top duration-200">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-bold">{t.itemsSelected.replace('{count}', selectedIds.size)}</span>
+                      <div className="h-4 w-px bg-white/30" />
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => {
+                          setCollectionModal({ show: true, ids: Array.from(selectedIds) });
+                        }} className="flex items-center gap-1 text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-colors">
+                          <Plus className="w-3 h-3" /> {t.newCollectionAction}
+                        </button>
+                        {allCollections.filter(c => c !== 'all').length > 0 && (
+                          <div className="relative group/menu">
+                            <button className="flex items-center gap-1 text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded transition-colors">
+                              <Bookmark className="w-3 h-3" /> {t.addCollectionAction} <ChevronDown className="w-3 h-3" />
+                            </button>
+                            <div className="absolute top-full left-0 mt-1 hidden group-hover/menu:block bg-white border border-slate-200 shadow-xl rounded-lg py-1 min-w-[120px] text-slate-700">
+                              {allCollections.filter(c => c !== 'all').map(c => (
+                                <button key={c} onClick={() => handleUpdateCollections(Array.from(selectedIds), c, 'add')} className="w-full text-left px-3 py-1.5 text-[10px] hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2">
+                                  <Bookmark className="w-3 h-3" /> {c}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {collectionFilter !== 'all' && (
+                          <button onClick={() => handleUpdateCollections(Array.from(selectedIds), collectionFilter, 'remove')} className="flex items-center gap-1 text-[10px] bg-red-500/80 hover:bg-red-500 px-2 py-1 rounded transition-colors">
+                            <X className="w-3 h-3" /> {t.removeFromCollection}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <button onClick={() => setSelectedIds(new Set())} className="p-1 hover:bg-white/20 rounded">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
                   {pagedWallpapers.map((wp) => (
-                    <div 
-                      key={wp.id}
-                      onClick={() => toggleSelect(wp.id)}
-                      className={`
-                        relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all animate-fade-in
-                        ${selectedIds.has(wp.id) 
-                          ? 'border-primary-500 ring-2 ring-primary-200' 
-                          : 'border-transparent hover:border-slate-300'
-                        }
-                      `}
-                    >
-                      <img 
-                        src={wp.preview} 
-                        alt={wp.title}
-                        loading="lazy"
-                        className="w-full aspect-square object-cover bg-slate-100"
-                      />
-                      
-                      {/* Badge for Type/Rating */}
-                      <div className="absolute top-0 left-0 flex flex-col gap-1 p-1">
-                        <div className="bg-black/50 backdrop-blur-sm text-white text-[9px] px-1 py-0.5 rounded uppercase font-bold">
-                          {wp.type}
-                        </div>
-                        {wp.contentrating !== 'Everyone' && (
-                          <div className={`text-white text-[9px] px-1 py-0.5 rounded font-bold ${
-                            wp.contentrating === 'Mature' ? 'bg-red-500' : 'bg-amber-500'
-                          }`}>
-                            {wp.contentrating}
+                    <div key={wp.id} onClick={() => toggleSelect(wp.id)} onContextMenu={(e) => handleContextMenu(e, wp)}
+                      className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${selectedIds.has(wp.id) ? 'border-primary-500 ring-2 ring-primary-100' : 'border-transparent hover:border-slate-300'}`}>
+                      <img src={wp.preview} alt={wp.title} loading="lazy" className="w-full aspect-square object-cover bg-slate-50" />
+                      <div className="absolute top-1 left-1 flex flex-col gap-0.5">
+                        <div className="bg-black/40 backdrop-blur-sm text-white text-[8px] px-1 py-0.5 rounded uppercase font-bold">{wp.type}</div>
+                        {wp.collections && wp.collections.length > 0 && (
+                          <div className="bg-primary-600/80 backdrop-blur-sm text-white text-[8px] px-1 py-0.5 rounded flex items-center gap-0.5 font-bold">
+                            <Heart className="w-2 h-2 fill-white" /> {wp.collections.length}
                           </div>
                         )}
                       </div>
-
-                      {/* Non-PKG Badge */}
-                      {!wp.isPkg && (
-                        <div className="absolute top-0 right-0 bg-amber-500 text-white text-[10px] px-1.5 py-0.5 rounded-bl-lg font-bold shadow-sm">
-                          非PKG
-                        </div>
-                      )}
-
-                      <div className="absolute inset-x-0 bottom-0 bg-black/60 p-2 transform translate-y-full group-hover:translate-y-0 transition-transform">
-                        <p className="text-xs text-white truncate font-medium" title={wp.title}>
-                          {wp.title}
-                        </p>
-                        {wp.description && (
-                          <p className="text-[10px] text-slate-300 truncate" title={wp.description}>
-                            {wp.description}
-                          </p>
-                        )}
+                      {!wp.isPkg && <div className="absolute top-0 right-0 bg-amber-500 text-white text-[8px] px-1 py-0.5 rounded-bl-md font-bold">{lang === 'zh' ? '非PKG' : 'Non-PKG'}</div>}
+                      <div className="absolute inset-x-0 bottom-0 bg-black/50 p-1.5 transform translate-y-full group-hover:translate-y-0 transition-transform">
+                        <p className="text-[10px] text-white truncate font-medium">{wp.title}</p>
                       </div>
-                      {selectedIds.has(wp.id) && (
-                        <div className="absolute top-2 left-2 w-6 h-6 bg-primary-600 rounded-full flex items-center justify-center shadow-lg z-10">
-                          <Check className="w-4 h-4 text-white" />
-                        </div>
-                      )}
+                      {selectedIds.has(wp.id) && <div className="absolute top-1.5 left-1.5 w-5 h-5 bg-primary-600 rounded-full flex items-center justify-center shadow-lg z-10"><Check className="w-3 h-3 text-white" /></div>}
                     </div>
                   ))}
                 </div>
-                {filteredWallpapers.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                    <Search className="w-12 h-12 mb-2 opacity-20" />
-                    <p>没有找到符合条件的壁纸</p>
-                  </div>
-                )}
               </div>
               
-              {/* Pagination Controls */}
               {totalPages > 1 && (
-                <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
-                  <div className="text-sm text-slate-500">
-                    第 {currentPage} / {totalPages} 页 (共 {filteredWallpapers.length} 个项目)
+                <div className="mt-3 pt-3 border-t border-slate-50 flex items-center justify-between shrink-0">
+                  <div className="text-[10px] text-slate-400">{t.pageInfo.replace('{current}', currentPage).replace('{total}', totalPages)}</div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-1 rounded border border-slate-100 disabled:opacity-20"><ChevronLeft className="w-4 h-4" /></button>
+                    <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-1 rounded border border-slate-100 disabled:opacity-20"><ChevronRight className="w-4 h-4" /></button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                      disabled={currentPage === 1}
-                      className="p-1.5 rounded-md border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    
-                    <div className="flex items-center gap-1">
-                      {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                        let pageNum;
-                        if (totalPages <= 5) {
-                          pageNum = i + 1;
-                        } else if (currentPage <= 3) {
-                          pageNum = i + 1;
-                        } else if (currentPage >= totalPages - 2) {
-                          pageNum = totalPages - 4 + i;
-                        } else {
-                          pageNum = currentPage - 2 + i;
-                        }
-                        
-                        return (
-                          <button
-                            key={pageNum}
-                            onClick={() => setCurrentPage(pageNum)}
-                            className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${
-                              currentPage === pageNum
-                                ? 'bg-primary-600 text-white'
-                                : 'text-slate-600 hover:bg-slate-100'
-                            }`}
-                          >
-                            {pageNum}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                      disabled={currentPage === totalPages}
-                      className="p-1.5 rounded-md border border-slate-200 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    >
-                      <ChevronRight className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-              )}
-              
-              {selectedIds.size > 0 && (
-                <div className="mt-4 p-3 bg-primary-50 rounded-lg flex items-center justify-between">
-                  <span className="text-sm font-medium text-primary-700">
-                    已选择 {selectedIds.size} 个项目
-                  </span>
-                  <button 
-                    onClick={() => setSelectedIds(new Set())}
-                    className="text-xs text-primary-600 hover:underline"
-                  >
-                    清除选择
-                  </button>
                 </div>
               )}
             </div>
@@ -565,229 +660,465 @@ function ExtractView() {
         )}
 
         {/* Right Side: Settings */}
-        <div className={wallpapers.length > 0 ? 'lg:col-span-1' : ''}>
-          <div className="card sticky top-6">
-            <h2 className="text-xl font-semibold mb-4">提取设置</h2>
-            
-            {/* Input Path */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                输入路径，建议输入壁纸根目录
-              </label>
-              <div className="flex flex-col gap-2">
-                <input
-                  type="text"
-                  value={inputPath}
-                  onChange={(e) => setInputPath(e.target.value)}
-                  placeholder="PKG/TEX 文件或目录"
-                  className="input-field w-full"
-                />
+        <div className="lg:col-span-1 flex flex-col min-h-0">
+          <div className="card h-full flex flex-col overflow-hidden">
+            <h2 className="text-base font-bold mb-3 shrink-0">{t.extractSettings}</h2>
+            <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">{t.inputPath}</label>
+                <input type="text" value={inputPath} onChange={(e) => setInputPath(e.target.value)} placeholder={lang === 'zh' ? "PKG目录" : "PKG Directory"} className="input-field w-full py-1.5 text-xs mb-2" />
                 <div className="flex gap-2">
-                  <button
-                    onClick={handleSelectFile}
-                    className="btn-secondary flex-1 flex items-center justify-center gap-2"
-                  >
-                    <File className="w-4 h-4" />
-                    文件
+                  <button onClick={handleSelectFile} className="btn-secondary flex-1 py-1.5 text-xs flex items-center justify-center gap-1"><File className="w-3.5 h-3.5" />{t.file}</button>
+                  <button onClick={handleSelectFolder} className="btn-secondary flex-1 py-1.5 text-xs flex items-center justify-center gap-1"><FolderOpen className="w-3.5 h-3.5" />{t.directory}</button>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5"><Settings className="w-3.5 h-3.5" />{t.outputSettings}</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">{t.outputDir}</label>
+                      <div className="flex gap-1.5">
+                        <input type="text" value={outputDir} onChange={(e) => setOutputDir(e.target.value)} className="input-field flex-1 py-1.5 text-xs" />
+                        <button onClick={handleSelectOutput} className="btn-secondary py-1 text-xs px-2">{t.select}</button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 mb-1">{t.ignoreExts}</label>
+                      <input type="text" value={ignoreExts} onChange={(e) => setIgnoreExts(e.target.value)} className="input-field py-1.5 text-xs" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-50">
+                  <h3 className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5"><Filter className="w-3.5 h-3.5" />{t.tagSearch}</h3>
+                  <div className="space-y-2 mb-3">
+                    <label className="block text-[10px] text-slate-400">{t.taggerModelPath}</label>
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        value={taggerModelPath}
+                        onChange={(e) => setTaggerModelPath(e.target.value)}
+                        placeholder={t.taggerModelPathPlaceholder}
+                        className="input-field flex-1 py-1.5 text-xs"
+                      />
+                      <button type="button" onClick={handleSelectTaggerModel} className="btn-secondary py-1 text-xs px-2">{t.select}</button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGenerateTags}
+                      disabled={isTaggerRunning || wallpapers.length === 0}
+                      className="w-full py-2 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isTaggerRunning ? t.generatingTags : t.generateTags}
+                    </button>
+                    {taggerProgress && <p className="text-[10px] text-slate-500 truncate" title={taggerProgress}>{taggerProgress}</p>}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-50">
+                  <h3 className="text-xs font-bold text-slate-700 mb-2">{t.options}</h3>
+                  <div className="space-y-1.5">
+                    {[
+                      { label: t.convertTex, state: convertTex, set: setConvertTex },
+                      { label: t.overwrite, state: overwrite, set: setOverwrite },
+                      { label: t.justCopy, state: justCopy, set: setJustCopy }
+                    ].map(opt => (
+                      <label key={opt.label} className="flex items-center gap-2 cursor-pointer py-0.5">
+                        <input type="checkbox" checked={opt.state} onChange={e => opt.set(e.target.checked)} className="w-3.5 h-3.5 text-primary-600 rounded" />
+                        <span className="text-xs text-slate-600">{opt.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button onClick={() => setShowAdvanced(!showAdvanced)} className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} /> {t.advancedOptions}
                   </button>
-                  <button
-                    onClick={handleSelectFolder}
-                    className="btn-secondary flex-1 flex items-center justify-center gap-2"
-                  >
-                    <FolderOpen className="w-4 h-4" />
-                    目录
-                  </button>
+                  {showAdvanced && (
+                    <div className="mt-2 space-y-1.5 p-2 bg-slate-50 rounded-md">
+                      {[
+                        { label: t.recursive, state: recursive, set: setRecursive },
+                        { label: t.singleDir, state: singleDir, set: setSingleDir },
+                        { label: t.useName, state: useName, set: setUseName }
+                      ].map(opt => (
+                        <label key={opt.label} className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={opt.state} onChange={e => opt.set(e.target.checked)} className="w-3 h-3 text-primary-600 rounded" />
+                          <span className="text-[10px] text-slate-500">{opt.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="space-y-6">
-              {/* Output Settings */}
-              <div>
-                <h3 className="text-lg font-medium mb-3 flex items-center gap-2">
-                  <Settings className="w-5 h-5" />
-                  输出设置
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      输出目录 (-o)
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={outputDir}
-                        onChange={(e) => setOutputDir(e.target.value)}
-                        placeholder="选择输出目录"
-                        className="input-field flex-1"
-                      />
-                      <button
-                        onClick={handleSelectOutput}
-                        className="btn-secondary whitespace-nowrap"
-                      >
-                        选择
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      忽略扩展名 (-i)
-                    </label>
-                    <input
-                      type="text"
-                      value={ignoreExts}
-                      onChange={(e) => setIgnoreExts(e.target.value)}
-                      placeholder="txt,log"
-                      className="input-field"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Conversion Options */}
-              <div>
-                <h3 className="text-lg font-medium mb-3">选项</h3>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={convertTex}
-                      onChange={(e) => setConvertTex(e.target.checked)}
-                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                    />
-                    <span className="text-sm">TEX 转图像 (-t)</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={overwrite}
-                      onChange={(e) => setOverwrite(e.target.checked)}
-                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                    />
-                    <span className="text-sm">覆盖现有文件</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer p-1 hover:bg-slate-50 rounded">
-                    <input
-                      type="checkbox"
-                      checked={justCopy}
-                      onChange={(e) => setJustCopy(e.target.checked)}
-                      className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                    />
-                    <span className="text-sm">仅原样复制文件夹 (不解包)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Advanced Options */}
-              <div>
-                <button
-                  onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="flex items-center gap-2 text-sm font-medium text-slate-700 hover:text-slate-900"
-                >
-                  <ChevronDown
-                    className={`w-4 h-4 transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
-                  />
-                  高级选项
-                </button>
-                {showAdvanced && (
-                  <div className="mt-3 space-y-2 p-3 bg-slate-50 rounded-lg">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={recursive}
-                        onChange={(e) => setRecursive(e.target.checked)}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm">递归搜索 (-r)</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={singleDir}
-                        onChange={(e) => setSingleDir(e.target.checked)}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm">单一目录 (-s)</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={useName}
-                        onChange={(e) => setUseName(e.target.checked)}
-                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                      />
-                      <span className="text-sm">使用项目名称 (-n)</span>
-                    </label>
-                  </div>
-                )}
-              </div>
-
-              {/* Execute Button */}
-              <div className="pt-2">
-                <button
-                  onClick={handleExtract}
-                  disabled={(!isRunning && selectedIds.size === 0) || (!isRunning && !inputPath)}
-                  className={`flex items-center gap-2 w-full justify-center py-3 shadow-md rounded-lg font-medium transition-all ${
-                    isRunning 
-                      ? 'bg-red-500 hover:bg-red-600 text-white' 
-                      : 'btn-primary'
-                  }`}
-                >
-                  {isRunning ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      停止提取
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-5 h-5" />
-                      {selectedIds.size > 0 
-                        ? (justCopy ? `复制选中项 (${selectedIds.size})` : `解包选中项 (${selectedIds.size})`) 
-                        : (justCopy ? '开始执行复制' : '开始执行提取')}
-                    </>
-                  )}
-                </button>
-              </div>
+            <div className="pt-3 shrink-0 border-t border-slate-100 mt-3">
+              <button onClick={handleExtract} disabled={(!isRunning && selectedIds.size === 0 && !inputPath)}
+                className={`flex items-center gap-2 w-full justify-center py-2.5 shadow-sm rounded-lg text-sm font-bold transition-all ${isRunning ? 'bg-red-500 text-white' : 'btn-primary'}`}>
+                {isRunning ? <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />{t.stop}</> : <><Play className="w-4 h-4" />{selectedIds.size > 0 ? `${t.extract} (${selectedIds.size})` : t.execute}</>}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Output Log - Simplified */}
       {output && (
-        <div className="card">
-          <h3 className="text-lg font-medium mb-4 flex items-center justify-between">
-            <span>提取进度</span>
-            <button 
-              onClick={() => setOutput('')}
-              className="text-xs text-slate-400 hover:text-slate-600 font-normal"
-            >
-              清除列表
-            </button>
-          </h3>
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 max-h-64 overflow-y-auto custom-scrollbar">
-            <div className="flex flex-col gap-2">
-              {output.trim().split('\n').map((line, idx) => {
-                const isSuccess = line.includes('✅');
-                const isPending = line.includes('⏳');
-                const isStopped = line.includes('⏹️');
-                const [name, status] = line.split(' - ');
-                return (
-                  <div key={idx} className={`flex items-center justify-between p-2 rounded-md border ${
-                    isSuccess ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 
-                    isPending ? 'bg-amber-50 border-amber-100 text-amber-800' :
-                    isStopped ? 'bg-slate-100 border-slate-200 text-slate-600' :
-                    'bg-red-50 border-red-100 text-red-800'
-                  }`}>
-                    <span className="text-sm font-medium">{name}</span>
-                    <span className="text-xs font-bold">{status}</span>
-                  </div>
-                );
-              })}
-            </div>
+        <div className="card shrink-0 py-2 px-4 border-t-4 border-primary-500">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t.progress}</span>
+            <button onClick={() => setOutput('')} className="text-[10px] text-slate-400 hover:text-slate-600">{t.clear}</button>
+          </div>
+          <div className="max-h-24 overflow-y-auto custom-scrollbar text-[10px] space-y-1">
+            {output.trim().split('\n').map((line, idx) => {
+              const isSuccess = line.includes('✅');
+              const parts = line.split(' - ');
+              return (
+                <div key={idx} className={`flex items-center justify-between p-1.5 rounded ${isSuccess ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-600'}`}>
+                  <span className="truncate flex-1">{parts[0]}</span>
+                  <span className="font-bold shrink-0 ml-2">{parts[1]}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
+
+      {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} wp={contextMenu.wp} allCollections={allCollections} onOpenFolder={() => handleOpenFolder(contextMenu.wp)} onSetAsWallpaper={() => handleSetAsWallpaper(contextMenu.wp)} onUpdateCollections={handleUpdateCollections} onOpenNewCollection={() => setCollectionModal({ show: true, ids: [contextMenu.wp.id] })} lang={lang} />}
+      {assetModal && <AssetModal wp={assetModal.wp} assets={assetModal.assets} onClose={() => setAssetModal(null)} onSelect={selectAssetAsWallpaper} lang={lang} />}
+      {collectionModal.show && (
+        <NewCollectionModal 
+          onClose={() => setCollectionModal({ show: false, ids: [] })} 
+          onConfirm={(name) => {
+            handleUpdateCollections(collectionModal.ids, name, 'add');
+            setCollectionModal({ show: false, ids: [] });
+          }} 
+          lang={lang}
+        />
+      )}
+      {isSettingWallpaper && <div className="fixed inset-0 z-[100] bg-white/60 backdrop-blur-[2px] flex items-center justify-center"><div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center gap-4"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600"></div><p className="text-sm font-medium text-slate-700">{t.preparingResources}</p></div></div>}
+    </div>
+  );
+}
+
+function ContextMenu({ x, y, wp, allCollections, onOpenFolder, onSetAsWallpaper, onUpdateCollections, onOpenNewCollection, lang }) {
+  const t = translations[lang];
+  const [showCollections, setShowCollections] = useState(false);
+  
+  return (
+    <div className="fixed z-50 bg-white border border-slate-200 shadow-xl rounded-lg py-1 min-w-[180px] animate-in fade-in zoom-in duration-100" style={{ left: x, top: y }} onClick={(e) => e.stopPropagation()}>
+      <button onClick={onOpenFolder} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"><FolderOpen className="w-4 h-4" />{t.openFolder}</button>
+      <button onClick={onSetAsWallpaper} className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"><Monitor className="w-4 h-4" />{t.setAsWallpaper}</button>
+      
+      <div className="h-px bg-slate-100 my-1" />
+      
+      <div className="relative">
+        <button 
+          onMouseEnter={() => setShowCollections(true)}
+          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center justify-between gap-2"
+        >
+          <div className="flex items-center gap-2"><Bookmark className="w-4 h-4" />{t.addToCollection}</div>
+          <ChevronRight className="w-3 h-3" />
+        </button>
+        
+        {showCollections && (
+          <div 
+            className="absolute left-full top-0 ml-0.5 bg-white border border-slate-200 shadow-xl rounded-lg py-1 min-w-[160px]"
+            onMouseLeave={() => setShowCollections(false)}
+          >
+            <button 
+              onClick={onOpenNewCollection}
+              className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> {t.newCollection}
+            </button>
+            
+            {allCollections.filter(c => c !== 'all').length > 0 && <div className="h-px bg-slate-100 my-1" />}
+            
+            {allCollections.filter(c => c !== 'all').map(c => {
+              const isInCollection = wp.collections && wp.collections.includes(c);
+              return (
+                <button 
+                  key={c}
+                  onClick={() => onUpdateCollections([wp.id], c, isInCollection ? 'remove' : 'add')}
+                  className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-primary-50 hover:text-primary-700 flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2">
+                    <Bookmark className={`w-4 h-4 ${isInCollection ? 'fill-primary-500 text-primary-500' : ''}`} />
+                    {c}
+                  </div>
+                  {isInCollection && <Check className="w-3 h-3 text-primary-600" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VideoAssetRow({ asset, isMuted, getAssetUrl, formatSize, onSelect, t, lang }) {
+  const videoRef = useRef(null);
+  const isScrubbingRef = useRef(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isSettingFrame, setIsSettingFrame] = useState(false);
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setDuration(videoRef.current.duration);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (isScrubbingRef.current || !videoRef.current) return;
+    setCurrentTime(videoRef.current.currentTime);
+  };
+
+  const handleSliderChange = (e) => {
+    const val = parseFloat(e.target.value);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = val;
+      setCurrentTime(val);
+    }
+  };
+
+  const handleSliderInteractionStart = () => {
+    isScrubbingRef.current = true;
+    videoRef.current?.pause();
+    const end = () => {
+      isScrubbingRef.current = false;
+      document.removeEventListener('mouseup', end);
+      document.removeEventListener('touchend', end);
+    };
+    document.addEventListener('mouseup', end);
+    document.addEventListener('touchend', end);
+  };
+
+  const handleSliderInteractionEnd = () => {
+    isScrubbingRef.current = false;
+  };
+
+  const captureFrame = async () => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2) return null;
+    video.pause();
+    const targetTime = currentTime;
+    video.currentTime = targetTime;
+    if (video.seeking) {
+      await new Promise(resolve => video.addEventListener('seeked', resolve, { once: true }));
+    }
+    return new Promise((resolve) => {
+      const doCapture = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        video.pause();
+        resolve(canvas.toDataURL('image/png'));
+      };
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.play();
+        video.requestVideoFrameCallback((now, metadata) => {
+          doCapture();
+        });
+      } else {
+        setTimeout(doCapture, 150);
+      }
+    });
+  };
+
+  const handleSetFrameAsDesktop = async () => {
+    if (!window.electronAPI?.saveBase64AsTemp || !window.electronAPI?.setWallpaper) {
+      alert(t.operationFailed + ': ' + (t.electronOnly || 'Electron API 不可用'));
+      return;
+    }
+    setIsSettingFrame(true);
+    try {
+      const base64 = await captureFrame();
+      if (!base64) {
+        alert(t.operationFailed + ': ' + (lang === 'zh' ? '无法捕获视频帧' : 'Failed to capture video frame'));
+        return;
+      }
+      const res = await window.electronAPI.saveBase64AsTemp(base64);
+      if (!res.success) {
+        alert(t.operationFailed + ': ' + res.error);
+        return;
+      }
+      const wallRes = await window.electronAPI.setWallpaper(res.path);
+      if (wallRes.success) {
+        alert(t.setWallpaperSuccess);
+      } else {
+        alert(`${t.setWallpaperFailed}: ${wallRes.error}`);
+      }
+    } catch (err) {
+      alert(`${t.operationFailed}: ${err.message}`);
+    } finally {
+      setIsSettingFrame(false);
+    }
+  };
+
+  const formatTime = (sec) => {
+    if (!isFinite(sec) || isNaN(sec)) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="group flex flex-col md:flex-row gap-6 p-4 border border-slate-200 rounded-2xl hover:border-primary-500 hover:bg-primary-50 transition-all">
+      <div className="w-full md:w-72 flex flex-col gap-3 shrink-0">
+        <div className="aspect-video bg-slate-100 rounded-xl overflow-hidden border border-slate-100">
+          <video
+            ref={videoRef}
+            src={getAssetUrl(asset.path)}
+            className="w-full h-full object-cover"
+            muted
+            preload="auto"
+            playsInline
+            onLoadedMetadata={handleLoadedMetadata}
+            onTimeUpdate={handleTimeUpdate}
+            onMouseOver={e => e.target.play()}
+            onMouseOut={e => { e.target.pause(); }}
+            loop
+          />
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-slate-500">{t.videoFramePickerHint}</p>
+          <div className="flex items-center gap-2">
+            <input
+              type="range"
+              min={0}
+              max={duration || 100}
+              step={0.1}
+              value={currentTime}
+              onChange={handleSliderChange}
+              onMouseDown={handleSliderInteractionStart}
+              onMouseUp={handleSliderInteractionEnd}
+              onMouseLeave={handleSliderInteractionEnd}
+              onTouchStart={handleSliderInteractionStart}
+              onTouchEnd={handleSliderInteractionEnd}
+              className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-primary-600"
+            />
+            <span className="text-xs text-slate-600 font-mono shrink-0 min-w-[3rem]">{formatTime(currentTime)} / {formatTime(duration)}</span>
+          </div>
+          <button
+            onClick={handleSetFrameAsDesktop}
+            disabled={isSettingFrame || duration === 0}
+            className="w-full py-2 text-sm font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+          >
+            {isSettingFrame ? <><div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />{lang === 'zh' ? '设置中...' : 'Setting...'}</> : <><ImageIcon className="w-4 h-4" />{t.setFrameAsDesktopWallpaper}</>}
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 flex flex-col justify-center min-w-0">
+        <p className="text-lg font-bold text-slate-900 truncate">{asset.name}</p>
+        <div className="flex items-center gap-3 mt-2"><span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span><span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span></div>
+      </div>
+      <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">{t.applyAsWallpaper}</button></div>
+    </div>
+  );
+}
+
+function AssetModal({ wp, assets, onClose, onSelect, lang }) {
+  const t = translations[lang];
+  const [isMuted, setIsMuted] = useState(true);
+  const formatSize = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+  const getAssetUrl = (path) => {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `repkg-thumb://local${normalizedPath}`;
+  };
+  const isVideo = (ext) => ext === '.mp4' || ext === '.mov';
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden animate-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+          <div>
+            <h3 className="text-xl font-bold text-slate-900">{t.selectWallpaperFile}</h3>
+            <p className="text-sm text-slate-500 mt-1">{t.chooseOneAsset}</p>
+          </div>
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <input 
+                type="checkbox" 
+                checked={isMuted} 
+                onChange={(e) => setIsMuted(e.target.checked)}
+                className="w-4 h-4 text-primary-600 rounded border-slate-300 focus:ring-primary-500" 
+              />
+              <span className="text-sm font-medium text-slate-600 group-hover:text-slate-900 transition-colors">{t.muteVideo}</span>
+            </label>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X className="w-6 h-6 text-slate-400" /></button>
+          </div>
+        </div>
+        <div className="p-6 overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-1 gap-6">
+            {assets.map((asset, idx) =>
+              isVideo(asset.ext) ? (
+                <VideoAssetRow key={idx} asset={asset} isMuted={isMuted} getAssetUrl={getAssetUrl} formatSize={formatSize} onSelect={onSelect} t={t} lang={lang} />
+              ) : (
+                <div key={idx} className="group flex flex-col md:flex-row gap-6 p-4 border border-slate-200 rounded-2xl hover:border-primary-500 hover:bg-primary-50 transition-all">
+                  <div className="w-full md:w-64 aspect-video bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-100">
+                    <img src={getAssetUrl(asset.path)} alt={asset.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 flex flex-col justify-center min-w-0">
+                    <p className="text-lg font-bold text-slate-900 truncate">{asset.name}</p>
+                    <div className="flex items-center gap-3 mt-2"><span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span><span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span></div>
+                  </div>
+                  <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">{t.applyAsWallpaper}</button></div>
+                </div>
+              )
+            )}
+          </div>
+        </div>
+        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center shrink-0"><p className="text-xs text-slate-400 italic">{t.cacheWarning}</p></div>
+      </div>
+    </div>
+  );
+}
+
+function NewCollectionModal({ onClose, onConfirm, lang }) {
+  const t = translations[lang];
+  const [name, setName] = useState('');
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (name.trim()) {
+      onConfirm(name.trim());
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200">
+        <form onSubmit={handleSubmit} className="p-6">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">{t.newCollectionAction}</h3>
+          <input 
+            autoFocus
+            type="text" 
+            value={name} 
+            onChange={(e) => setName(e.target.value)}
+            placeholder={`${t.newCollection}...`} 
+            className="input-field mb-6"
+          />
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1 py-2">{t.cancel}</button>
+            <button type="submit" disabled={!name.trim()} className="btn-primary flex-1 py-2">{t.confirm}</button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

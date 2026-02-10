@@ -1,19 +1,58 @@
-import { app, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron';
-import { spawn } from 'child_process';
+import { app, BrowserWindow, ipcMain, dialog, protocol, net, shell } from 'electron';
+import { spawn, exec } from 'child_process';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import os from 'os';
 import fs from 'fs';
+import { createReadStream } from 'fs';
+import { Readable } from 'node:stream';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// 优化 Chromium 渲染性能，解决 "tile memory limits exceeded" 警告
+app.commandLine.appendSwitch('max-tiles-for-interest-area', '512');
+app.commandLine.appendSwitch('num-raster-threads', '4');
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+}
+
 const IS_MAC = process.platform === 'darwin';
 const IS_WINDOWS = process.platform === 'win32';
 
-// 注册自定义协议以处理本地图片预览，避免 Base64 占用大量内存
+// 缓存目录路径
+let cacheDir = null;
+
+function getCacheDir(baseDir) {
+  if (!cacheDir && baseDir) {
+    cacheDir = path.join(baseDir, 'cache');
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+    }
+  }
+  return cacheDir;
+}
+
+// 清理缓存
+function cleanupCache() {
+  if (currentWallpaperProcess) {
+    currentWallpaperProcess.kill('SIGKILL');
+    currentWallpaperProcess = null;
+  }
+  if (cacheDir && fs.existsSync(cacheDir)) {
+    try {
+      console.log('正在清理缓存:', cacheDir);
+      fs.rmSync(cacheDir, { recursive: true, force: true });
+    } catch (err) {
+      console.error('清理缓存失败:', err);
+    }
+  }
+}
+
+// 注册自定义协议以处理本地图片预览，支持流式传输以播放视频
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'repkg-thumb', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+  { scheme: 'repkg-thumb', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, bypassCSP: true } }
 ]);
 
 // 获取资源目录路径
@@ -140,6 +179,7 @@ function getExecutablePath() {
 
 let mainWindow;
 let currentRepkgProcess = null;
+let currentWallpaperProcess = null;
 
 function createWindow() {
   // 获取 preload 脚本路径
@@ -228,19 +268,48 @@ app.whenReady().then(() => {
   protocol.handle('repkg-thumb', (request) => {
     try {
       const url = new URL(request.url);
-      // 将 hostname 和 pathname 组合回来，并解码
-      // 例如 repkg-thumb://local/C:/path... -> url.pathname 为 /C:/path...
+      // 解码路径并规范化
       let filePath = decodeURIComponent(url.pathname);
       
-      // 在 Windows 下，pathname 通常以 /C:/... 开头，需要去掉开头的 /
-      if (IS_WINDOWS && filePath.startsWith('/')) {
-        filePath = filePath.slice(1);
-      }
-      // 在 macOS 下，如果路径不是以 / 开头（虽然 pathname 通常会带），补齐它
-      else if (!IS_WINDOWS && !filePath.startsWith('/')) {
-        filePath = '/' + filePath;
+      // 处理 macOS/Linux 下可能出现的双斜杠问题
+      if (!IS_WINDOWS) {
+        // 如果路径以 // 开头（常见于 repkg-thumb://local//Users/...），将其替换为单斜杠
+        filePath = filePath.replace(/^\/\//, '/');
+      } else {
+        // Windows 处理：去掉开头的斜杠以获得 C:/... 格式
+        if (filePath.startsWith('/')) {
+          filePath = filePath.slice(1);
+        }
       }
       
+      // 验证文件是否存在
+      if (!fs.existsSync(filePath)) {
+        console.error('协议请求的文件不存在:', filePath);
+        return new Response('Not Found', { status: 404 });
+      }
+
+      const range = request.headers.get('Range');
+      if (range && range.startsWith('bytes=')) {
+        const stats = fs.statSync(filePath);
+        const fileSize = stats.size;
+        const parts = range.slice(6).split('-');
+        const start = parts[0] ? parseInt(parts[0], 10) : 0;
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const contentLength = end - start + 1;
+        const stream = createReadStream(filePath, { start, end });
+        const webStream = Readable.toWeb(stream);
+        const ext = path.extname(filePath).toLowerCase();
+        const mime = ext === '.mp4' ? 'video/mp4' : ext === '.mov' ? 'video/quicktime' : 'application/octet-stream';
+        return new Response(webStream, {
+          status: 206,
+          headers: {
+            'Content-Type': mime,
+            'Content-Length': String(contentLength),
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+          },
+        });
+      }
       const fileUrl = pathToFileURL(filePath).toString();
       return net.fetch(fileUrl);
     } catch (err) {
@@ -256,6 +325,10 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+app.on('will-quit', () => {
+  cleanupCache();
 });
 
 app.on('window-all-closed', () => {
@@ -281,6 +354,64 @@ ipcMain.handle('select-folder', async () => {
     properties: ['openDirectory'],
   });
   return result.canceled ? null : result.filePaths[0];
+});
+
+// 选择打标签模型目录（需含 model.onnx 和 selected_tags.csv）
+ipcMain.handle('select-tagger-model', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: '选择标签模型目录（需包含 model.onnx 和 selected_tags.csv）',
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+// 从模型目录读取 selected_tags.csv，返回标签名数组（用于搜索待选）
+ipcMain.handle('get-tagger-tags', async (event, modelDir) => {
+  if (!modelDir || !fs.existsSync(modelDir)) return [];
+  const csvPath = path.join(modelDir, 'selected_tags.csv');
+  if (!fs.existsSync(csvPath)) return [];
+  try {
+    const text = fs.readFileSync(csvPath, 'utf8');
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const header = lines[0].toLowerCase();
+    const nameIdx = header.split(',').indexOf('name');
+    if (nameIdx === -1) return [];
+    const names = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      const name = cols[nameIdx];
+      if (name) names.push(name.trim());
+    }
+    return names;
+  } catch (err) {
+    console.error('get-tagger-tags error:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('run-preview-tagger', async (event, { modelDir, wallpaperPaths, threshold }) => {
+  if (!modelDir || !fs.existsSync(modelDir)) {
+    return { ok: false, error: '模型目录无效或不存在' };
+  }
+  if (!wallpaperPaths || !Array.isArray(wallpaperPaths) || wallpaperPaths.length === 0) {
+    return { ok: false, error: '壁纸路径列表为空' };
+  }
+  try {
+    const { runTaggerOnWallpapers } = await import('./tagger.js');
+    const results = await runTaggerOnWallpapers(
+      modelDir,
+      wallpaperPaths,
+      (current, total, name, err) => {
+        event.sender.send('tagger-progress', { current, total, name, error: err || null });
+      },
+      typeof threshold === 'number' ? threshold : 0.35
+    );
+    return { ok: true, results };
+  } catch (err) {
+    console.error('run-preview-tagger error:', err);
+    return { ok: false, error: err.message || String(err) };
+  }
 });
 
 ipcMain.handle('run-repkg', async (event, args) => {
@@ -378,13 +509,16 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
           let previewPath = null;
           if (subEntries.includes('preview.jpg')) {
             previewPath = path.join(subPath, 'preview.jpg');
+          } else if (subEntries.includes('preview.png')) {
+            previewPath = path.join(subPath, 'preview.png');
           } else if (subEntries.includes('preview.gif')) {
             previewPath = path.join(subPath, 'preview.gif');
           }
           
           if (previewPath) {
-            // 检查是否有 pkg 文件
-            const hasPkg = subEntries.some(file => file.toLowerCase().endsWith('.pkg'));
+            // 找到第一个 pkg 文件
+            const pkgFile = subEntries.find(file => file.toLowerCase().endsWith('.pkg'));
+            const hasPkg = !!pkgFile;
             
             // 读取 project.json
             let projectInfo = {};
@@ -399,7 +533,6 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
             }
 
             // 使用更标准的 URL 构造方式：repkg-thumb://local/PATH
-            // 这样可以确保 URL 被浏览器正确解析
             const previewUrl = `repkg-thumb://local/${previewPath}`;
             
             const wallpaper = {
@@ -410,8 +543,11 @@ ipcMain.handle('scan-wallpapers', async (event, dirPath) => {
               contentrating: projectInfo.contentrating || 'Everyone',
               description: projectInfo.description || '',
               path: subPath,
+              pkgPath: hasPkg ? path.join(subPath, pkgFile) : null,
               preview: previewUrl,
               isPkg: hasPkg,
+              collections: projectInfo.repkgcollection || [],
+              preview_tagger: Array.isArray(projectInfo.preview_tagger) ? projectInfo.preview_tagger : (typeof projectInfo.preview_tagger === 'string' ? projectInfo.preview_tagger.split(',').map(s => s.trim()).filter(Boolean) : []),
             };
 
             // 发送单个壁纸发现事件
@@ -514,5 +650,213 @@ ipcMain.handle('copy-wallpaper-assets', async (event, { srcPath, destDir }) => {
   } catch (error) {
     console.error('递归复制资源出错:', error);
     return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('open-path', async (event, filePath) => {
+  if (!filePath || !fs.existsSync(filePath)) return { success: false, error: '路径不存在' };
+  try {
+    await shell.openPath(filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('打开路径失败:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-cache-dir', (event, baseDir) => {
+  return getCacheDir(baseDir);
+});
+
+ipcMain.handle('ensure-dir', (event, dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+  return true;
+});
+
+ipcMain.handle('get-largest-assets', async (event, dirPath) => {
+  if (!dirPath || !fs.existsSync(dirPath)) return [];
+  
+  const assetExtensions = ['.png', '.jpg', '.jpeg', '.mp4'];
+  const assets = [];
+  
+  function scan(currentDir) {
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        scan(fullPath);
+      } else {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (assetExtensions.includes(ext)) {
+          const stats = fs.statSync(fullPath);
+          assets.push({
+            name: entry.name,
+            path: fullPath,
+            size: stats.size,
+            ext: ext
+          });
+        }
+      }
+    }
+  }
+  
+  try {
+    scan(dirPath);
+    // 按大小降序排序并取前 5 个
+    return assets.sort((a, b) => b.size - a.size).slice(0, 15);
+  } catch (error) {
+    console.error('获取最大资源出错:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('update-wallpaper-collections', async (event, { wallpaperPaths, collectionName, action }) => {
+  const results = [];
+  for (const wpPath of wallpaperPaths) {
+    const projectJsonPath = path.join(wpPath, 'project.json');
+    if (!fs.existsSync(projectJsonPath)) {
+      results.push({ path: wpPath, success: false, error: 'project.json 不存在' });
+      continue;
+    }
+
+    try {
+      const content = fs.readFileSync(projectJsonPath, 'utf8');
+      const projectInfo = JSON.parse(content);
+      let collections = projectInfo.repkgcollection || [];
+
+      if (action === 'add') {
+        if (!collections.includes(collectionName)) {
+          collections.push(collectionName);
+        }
+      } else if (action === 'remove') {
+        collections = collections.filter(c => c !== collectionName);
+      } else if (action === 'set') {
+        // action 'set' can be used for renaming or resetting
+        // but for now let's focus on add/remove as requested
+      }
+
+      projectInfo.repkgcollection = collections;
+      fs.writeFileSync(projectJsonPath, JSON.stringify(projectInfo, null, 2), 'utf8');
+      results.push({ path: wpPath, success: true, collections });
+    } catch (err) {
+      console.error(`更新 project.json 失败 (${wpPath}):`, err);
+      results.push({ path: wpPath, success: false, error: err.message });
+    }
+  }
+  return results;
+});
+
+ipcMain.handle('delete-collection', async (event, { rootPath, collectionName }) => {
+  if (!rootPath || !fs.existsSync(rootPath)) return { success: false, error: '根路径不存在' };
+  
+  try {
+    const entries = fs.readdirSync(rootPath, { withFileTypes: true });
+    let updatedCount = 0;
+    
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const projectJsonPath = path.join(rootPath, entry.name, 'project.json');
+        if (fs.existsSync(projectJsonPath)) {
+          const content = fs.readFileSync(projectJsonPath, 'utf8');
+          const projectInfo = JSON.parse(content);
+          if (projectInfo.repkgcollection && projectInfo.repkgcollection.includes(collectionName)) {
+            projectInfo.repkgcollection = projectInfo.repkgcollection.filter(c => c !== collectionName);
+            fs.writeFileSync(projectJsonPath, JSON.stringify(projectInfo, null, 2), 'utf8');
+            updatedCount++;
+          }
+        }
+      }
+    }
+    return { success: true, updatedCount };
+  } catch (err) {
+    console.error('删除收藏夹出错:', err);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('set-wallpaper', async (event, filePath, options = {}) => {
+  if (!filePath || !fs.existsSync(filePath)) return { success: false, error: '文件不存在' };
+  
+  const { isMuted = false } = options;
+  
+  if (IS_MAC) {
+    // 无论设置什么类型的壁纸，都先停止当前正在运行的视频壁纸进程
+    if (currentWallpaperProcess) {
+      console.log('停止当前视频壁纸进程');
+      currentWallpaperProcess.kill('SIGKILL');
+      currentWallpaperProcess = null;
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    const isVideo = ext === '.mp4' || ext === '.mov';
+    
+    if (isVideo) {
+      try {
+        const resourcesPath = getResourcesPath();
+        const playerPath = path.join(resourcesPath, 'bin', 'WallpaperPlayer');
+        
+        if (!fs.existsSync(playerPath)) {
+          return { success: false, error: '找不到视频壁纸播放组件，请检查 resources/bin/WallpaperPlayer 是否存在' };
+        }
+
+        const args = [filePath];
+        if (isMuted) {
+          args.push('--mute');
+        }
+
+        console.log('启动视频壁纸播放器:', playerPath, '视频:', filePath, '静音:', isMuted);
+        currentWallpaperProcess = spawn(playerPath, args);
+        
+        currentWallpaperProcess.on('error', (err) => {
+          console.error('视频壁纸播放器启动错误:', err);
+        });
+
+        return { success: true, isVideo: true };
+      } catch (err) {
+        return { success: false, error: `启动视频播放器失败: ${err.message}` };
+      }
+    } else {
+      // 静态图片壁纸 - 改用 Finder 逻辑，在现代 macOS 上更稳定
+      const script = `tell application "Finder" to set desktop picture to POSIX file "${filePath}"`;
+      return new Promise((resolve) => {
+        exec(`osascript -e '${script}'`, (error) => {
+          if (error) {
+            console.error('设置壁纸失败:', error);
+            // 备选方案：如果 Finder 失败，尝试 System Events 的另一种写法
+            const backupScript = `tell application "System Events" to tell every desktop to set picture to "${filePath}"`;
+            exec(`osascript -e '${backupScript}'`, (backupError) => {
+              if (backupError) {
+                resolve({ success: false, error: backupError.message });
+              } else {
+                resolve({ success: true });
+              }
+            });
+          } else {
+            resolve({ success: true });
+          }
+        });
+      });
+    }
+  } else if (IS_WINDOWS) {
+    return { success: false, error: '目前仅支持 macOS 设置壁纸' };
+  }
+  
+  return { success: false, error: '不支持的平台' };
+});
+
+// 将 base64 图片保存为临时文件，用于从视频提取帧设为桌面壁纸
+ipcMain.handle('save-base64-as-temp', async (event, base64Data) => {
+  if (!base64Data || typeof base64Data !== 'string') return { success: false, error: '无效的 base64 数据' };
+  try {
+    const base64Content = base64Data.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Buffer.from(base64Content, 'base64');
+    const tempPath = path.join(os.tmpdir(), `repkg-frame-${Date.now()}.png`);
+    fs.writeFileSync(tempPath, buffer);
+    return { success: true, path: tempPath };
+  } catch (err) {
+    console.error('保存临时图片失败:', err);
+    return { success: false, error: err.message };
   }
 });

@@ -1,7 +1,7 @@
 {
-  "name": "repkg-webui",
-  "version": "2.0.0",
-  "description": "RePKG WebUI",
+  "name": "repkg-ToolBox",
+  "version": "2.5.0",
+  "description": "RePKG-Toolbox",
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
@@ -13,7 +13,12 @@
     "electron:build": "vite build && electron-builder",
     "electron:build:mac": "vite build && electron-builder --mac",
     "electron:build:win": "vite build && electron-builder --win --x64",
-    "electron:build:win64": "vite build && electron-builder --win --x64"
+    "electron:build:win64": "vite build && electron-builder --win --x64",
+    "version:current": "node -p \"require('./package.json').version\"",
+    "version:set": "node scripts/version.js set",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version"
   },
   "keywords": [
     "repkg",
@@ -38,11 +43,13 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "lucide-react": "^0.294.0",
-    "clsx": "^2.0.0"
+    "clsx": "^2.0.0",
+    "sharp": "^0.33.5",
+    "onnxruntime-node": "^1.20.0"
   },
   "build": {
-    "appId": "com.repkg.webui",
-    "productName": "RePKG WebUI",
+    "appId": "com.repkg.toolbox",
+    "productName": "RePKG-ToolBox",
     "directories": {
       "output": "dist-electron"
     },
@@ -50,7 +57,16 @@
       "dist/**/*",
       "electron/**/*",
       "resources/**/*",
-      "package.json"
+      "package.json",
+      "node_modules/onnxruntime-node/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/onnxruntime-common/**/*",
+      "node_modules/@img/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**/*",
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*"
     ],
     "extraResources": [
       {
@@ -90,7 +106,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "RePKG WebUI"
+      "shortcutName": "RePKG-ToolBox"
     }
   }
 }
