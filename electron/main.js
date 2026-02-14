@@ -846,6 +846,35 @@ ipcMain.handle('set-wallpaper', async (event, filePath, options = {}) => {
   return { success: false, error: '不支持的平台' };
 });
 
+// 将资源（文件或 base64）保存到输出目录下的 saved_res 文件夹
+ipcMain.handle('save-asset-to-saved-res', async (event, { srcPath, base64, outputDir, fileName }) => {
+  if (!outputDir) return { success: false, error: '未指定输出目录' };
+  
+  try {
+    const savedResDir = path.join(outputDir, 'saved_res');
+    if (!fs.existsSync(savedResDir)) {
+      fs.mkdirSync(savedResDir, { recursive: true });
+    }
+
+    const destPath = path.join(savedResDir, fileName);
+
+    if (base64) {
+      const base64Content = base64.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(base64Content, 'base64');
+      fs.writeFileSync(destPath, buffer);
+    } else if (srcPath && fs.existsSync(srcPath)) {
+      fs.copyFileSync(srcPath, destPath);
+    } else {
+      return { success: false, error: '无效的源数据' };
+    }
+
+    return { success: true, path: destPath };
+  } catch (err) {
+    console.error('保存资源到 saved_res 失败:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 // 将 base64 图片保存为临时文件，用于从视频提取帧设为桌面壁纸
 ipcMain.handle('save-base64-as-temp', async (event, base64Data) => {
   if (!base64Data || typeof base64Data !== 'string') return { success: false, error: '无效的 base64 数据' };

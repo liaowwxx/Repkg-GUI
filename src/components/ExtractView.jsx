@@ -787,7 +787,7 @@ function ExtractView({ lang }) {
       )}
 
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} wp={contextMenu.wp} allCollections={allCollections} onOpenFolder={() => handleOpenFolder(contextMenu.wp)} onSetAsWallpaper={() => handleSetAsWallpaper(contextMenu.wp)} onUpdateCollections={handleUpdateCollections} onOpenNewCollection={() => setCollectionModal({ show: true, ids: [contextMenu.wp.id] })} lang={lang} />}
-      {assetModal && <AssetModal wp={assetModal.wp} assets={assetModal.assets} onClose={() => setAssetModal(null)} onSelect={selectAssetAsWallpaper} lang={lang} />}
+      {assetModal && <AssetModal wp={assetModal.wp} assets={assetModal.assets} onClose={() => setAssetModal(null)} onSelect={selectAssetAsWallpaper} lang={lang} outputDir={outputDir} />}
       {collectionModal.show && (
         <NewCollectionModal 
           onClose={() => setCollectionModal({ show: false, ids: [] })} 
@@ -860,12 +860,17 @@ function ContextMenu({ x, y, wp, allCollections, onOpenFolder, onSetAsWallpaper,
   );
 }
 
-function VideoAssetRow({ asset, isMuted, getAssetUrl, formatSize, onSelect, t, lang }) {
+function VideoAssetRow({ asset, isMuted, getAssetUrl, formatSize, onSelect, t, lang, outputDir, wpTitle }) {
   const videoRef = useRef(null);
   const isScrubbingRef = useRef(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isSettingFrame, setIsSettingFrame] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const sanitizeFileName = (name) => {
+    return name.replace(/[\\/:*?"<>|]/g, '_');
+  };
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
@@ -963,6 +968,50 @@ function VideoAssetRow({ asset, isMuted, getAssetUrl, formatSize, onSelect, t, l
     }
   };
 
+  const handleSaveFrame = async () => {
+    if (!outputDir) {
+      alert(t.selectOutputDirFirst);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const base64 = await captureFrame();
+      if (!base64) throw new Error('Capture failed');
+      const fileName = `${sanitizeFileName(wpTitle || asset.name)}_${Date.now()}.png`;
+      const res = await window.electronAPI.saveAssetToSavedRes({ base64, outputDir, fileName });
+      if (res.success) {
+        alert(t.saveSuccess);
+      } else {
+        throw new Error(res.error);
+      }
+    } catch (err) {
+      alert(`${t.operationFailed}: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveAsset = async () => {
+    if (!outputDir) {
+      alert(t.selectOutputDirFirst);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const fileName = `${sanitizeFileName(wpTitle || asset.name)}_${Date.now()}${asset.ext}`;
+      const res = await window.electronAPI.saveAssetToSavedRes({ srcPath: asset.path, outputDir, fileName });
+      if (res.success) {
+        alert(t.saveSuccess);
+      } else {
+        throw new Error(res.error);
+      }
+    } catch (err) {
+      alert(`${t.operationFailed}: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const formatTime = (sec) => {
     if (!isFinite(sec) || isNaN(sec)) return '0:00';
     const m = Math.floor(sec / 60);
@@ -1007,27 +1056,52 @@ function VideoAssetRow({ asset, isMuted, getAssetUrl, formatSize, onSelect, t, l
             />
             <span className="text-xs text-slate-600 font-mono shrink-0 min-w-[3rem]">{formatTime(currentTime)} / {formatTime(duration)}</span>
           </div>
-          <button
-            onClick={handleSetFrameAsDesktop}
-            disabled={isSettingFrame || duration === 0}
-            className="w-full py-2 text-sm font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
-          >
-            {isSettingFrame ? <><div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />{lang === 'zh' ? '设置中...' : 'Setting...'}</> : <><ImageIcon className="w-4 h-4" />{t.setFrameAsDesktopWallpaper}</>}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSetFrameAsDesktop}
+              disabled={isSettingFrame || duration === 0}
+              className="flex-1 py-2 text-[10px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
+            >
+              {isSettingFrame ? <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" /> : <Monitor className="w-3.5 h-3.5" />}
+              {t.setFrameAsDesktopWallpaper}
+            </button>
+            <button
+              onClick={handleSaveFrame}
+              disabled={isSaving || duration === 0}
+              className="flex-1 py-2 text-[10px] font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
+            >
+              {isSaving ? <div className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              {t.saveCurrentFrame}
+            </button>
+          </div>
         </div>
       </div>
       <div className="flex-1 flex flex-col justify-center min-w-0">
         <p className="text-lg font-bold text-slate-900 truncate">{asset.name}</p>
-        <div className="flex items-center gap-3 mt-2"><span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span><span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span></div>
+        <div className="flex items-center gap-3 mt-2">
+          <span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span>
+          <span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span>
+        </div>
+        <div className="mt-4">
+          <button 
+            onClick={handleSaveAsset} 
+            disabled={isSaving}
+            className="text-xs text-primary-600 hover:text-primary-700 font-bold flex items-center gap-1"
+          >
+            <Bookmark className="w-3.5 h-3.5" /> {t.saveAsset}
+          </button>
+        </div>
       </div>
       <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">{t.applyAsWallpaper}</button></div>
     </div>
   );
 }
 
-function AssetModal({ wp, assets, onClose, onSelect, lang }) {
+function AssetModal({ wp, assets, onClose, onSelect, lang, outputDir }) {
   const t = translations[lang];
   const [isMuted, setIsMuted] = useState(true);
+  const [isSaving, setIsSaving] = useState(null); // stores asset index if saving
+
   const formatSize = (bytes) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -1035,11 +1109,40 @@ function AssetModal({ wp, assets, onClose, onSelect, lang }) {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
+
+  const sanitizeFileName = (name) => {
+    return name.replace(/[\\/:*?"<>|]/g, '_');
+  };
+
   const getAssetUrl = (path) => {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     return `repkg-thumb://local${normalizedPath}`;
   };
+
+  const handleSaveAsset = async (asset, idx) => {
+    if (!outputDir) {
+      alert(t.selectOutputDirFirst);
+      return;
+    }
+    setIsSaving(idx);
+    try {
+      const wpTitle = wp.title || wp.name;
+      const fileName = `${sanitizeFileName(wpTitle)}_${Date.now()}${asset.ext}`;
+      const res = await window.electronAPI.saveAssetToSavedRes({ srcPath: asset.path, outputDir, fileName });
+      if (res.success) {
+        alert(t.saveSuccess);
+      } else {
+        throw new Error(res.error);
+      }
+    } catch (err) {
+      alert(`${t.operationFailed}: ${err.message}`);
+    } finally {
+      setIsSaving(null);
+    }
+  };
+
   const isVideo = (ext) => ext === '.mp4' || ext === '.mov';
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
@@ -1066,7 +1169,18 @@ function AssetModal({ wp, assets, onClose, onSelect, lang }) {
           <div className="grid grid-cols-1 gap-6">
             {assets.map((asset, idx) =>
               isVideo(asset.ext) ? (
-                <VideoAssetRow key={idx} asset={asset} isMuted={isMuted} getAssetUrl={getAssetUrl} formatSize={formatSize} onSelect={onSelect} t={t} lang={lang} />
+                <VideoAssetRow 
+                  key={idx} 
+                  asset={asset} 
+                  isMuted={isMuted} 
+                  getAssetUrl={getAssetUrl} 
+                  formatSize={formatSize} 
+                  onSelect={onSelect} 
+                  t={t} 
+                  lang={lang} 
+                  outputDir={outputDir}
+                  wpTitle={wp.title || wp.name}
+                />
               ) : (
                 <div key={idx} className="group flex flex-col md:flex-row gap-6 p-4 border border-slate-200 rounded-2xl hover:border-primary-500 hover:bg-primary-50 transition-all">
                   <div className="w-full md:w-64 aspect-video bg-slate-100 rounded-xl overflow-hidden shrink-0 border border-slate-100">
@@ -1074,7 +1188,20 @@ function AssetModal({ wp, assets, onClose, onSelect, lang }) {
                   </div>
                   <div className="flex-1 flex flex-col justify-center min-w-0">
                     <p className="text-lg font-bold text-slate-900 truncate">{asset.name}</p>
-                    <div className="flex items-center gap-3 mt-2"><span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span><span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span></div>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider">{asset.ext.slice(1)}</span>
+                      <span className="text-sm text-slate-500 font-medium">{formatSize(asset.size)}</span>
+                    </div>
+                    <div className="mt-4">
+                      <button 
+                        onClick={() => handleSaveAsset(asset, idx)} 
+                        disabled={isSaving === idx}
+                        className="text-xs text-primary-600 hover:text-primary-700 font-bold flex items-center gap-1"
+                      >
+                        {isSaving === idx ? <div className="w-3 h-3 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" /> : <Bookmark className="w-3.5 h-3.5" />}
+                        {t.saveAsset}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center shrink-0"><button onClick={() => onSelect(asset, { isMuted })} className="w-full md:w-auto btn-primary py-3 px-8 shadow-lg">{t.applyAsWallpaper}</button></div>
                 </div>

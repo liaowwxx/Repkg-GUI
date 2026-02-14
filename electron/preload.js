@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLargestAssets: (dirPath) => ipcRenderer.invoke('get-largest-assets', dirPath),
   setWallpaper: (filePath, options) => ipcRenderer.invoke('set-wallpaper', filePath, options),
   saveBase64AsTemp: (base64Data) => ipcRenderer.invoke('save-base64-as-temp', base64Data),
+  saveAssetToSavedRes: (data) => ipcRenderer.invoke('save-asset-to-saved-res', data),
   updateWallpaperCollections: (data) => ipcRenderer.invoke('update-wallpaper-collections', data),
   deleteCollection: (data) => ipcRenderer.invoke('delete-collection', data),
   onRepkgOutput: (callback) => {
