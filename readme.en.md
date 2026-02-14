@@ -8,6 +8,12 @@ This is a modern graphical interface developed based on the [RePKG](https://gith
 
 </div>
 
+<div style="display: flex; justify-content: space-between;">
+  <img src="https://github.com/user-attachments/assets/c4b91a14-a3a4-4f5b-bf77-8fba489bf753" alt="mainscreen" style="width: 48%;">
+  <img src="https://github.com/user-attachments/assets/57761f3f-3070-4cc7-99e9-322410e79b1f" alt="set wallpaper" style="width: 48%;">
+</div>
+
+
 ## Core Features
 
 *   **Wallpaper Engine-like Visual Wallpaper Album**.

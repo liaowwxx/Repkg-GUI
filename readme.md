@@ -8,6 +8,11 @@
 
 </div>
 
+<div style="display: flex; justify-content: space-between;">
+  <img src="https://github.com/user-attachments/assets/17f921ce-3954-4807-836d-25184cbe0be2" alt="main" style="width: 48%;">
+  <img src="https://github.com/user-attachments/assets/7f6bb1a1-3a8f-4e2d-8a03-e5a6661a54d9" alt="set wallpaper" style="width: 48%;">
+</div>
+
 ## 核心特性
 
 - **类wallpaper engine的可视化壁纸相册**。
